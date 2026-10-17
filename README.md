@@ -7,7 +7,9 @@ Discuss the choices, ask for an explanation, and send your own answer back.
 
 Maie keeps the conversation and final answer separate. **Suggest answer** offers
 wording based on your discussion and draft; **Use in draft** accepts it.
-Only **Send to Claude** submits the final answer.
+Only **Send to Claude** submits the final answer. A set of up to four questions
+appears one at a time, with a separate discussion and draft for each question.
+Review the complete set before sending its answers together.
 
 This is an early source prototype for local use. It is not a signed, notarized
 app distribution. See [validation and limits](docs/VALIDATION.md).
@@ -24,8 +26,8 @@ sh prototype/run.sh
 ```
 
 1. Open **Connection**, choose **Continue with ChatGPT**, then complete sign-in.
-2. Choose an available model and effort, then use **Test connection**. Model
-   access depends on your account; usage is shared with your ChatGPT plan.
+2. Choose an available model and thinking time, then use
+   **Connection check → Check connection**. Model access depends on your account; usage is shared with your ChatGPT plan.
 3. Keep Maie open and preview setup for your Claude Code project:
 
    ```sh
@@ -48,10 +50,16 @@ Maie. The app must remain open while a question is waiting.
   explain a point or teach one small step when asked.
 - The first send per session/app run confirms the connection and included data.
   Later messages and suggestions send directly on your action.
-- Model and effort are above the message field. **Include Claude history** adds
-  a bounded excerpt from that session; it is off initially.
+- Model and thinking time are above the message field. **Include Claude history**
+  adds a bounded excerpt from that session; it is off initially.
 - Edit **Your answer**, optionally use **Suggest answer**, then **Send to Claude**.
+  For a question set, **Previous / Next** keeps each answer locally; the last
+  page opens **Review answers** before the single final submission. Choose several
+  options when requested, or type a custom answer in Your answer.
   Old questions remain inactive after a restart; ask Claude for a new question.
+- New questions appear with a small notice and a view of the question. While
+  editing or viewing another session, **Show** opens the new question when ready.
+  The panel appears without taking keyboard focus from your other app.
 - **Sessions** holds separate discussions and lets you delete local history.
 
 ChatGPT sign-in uses Maie's own registration. An optional OpenAI API key requires

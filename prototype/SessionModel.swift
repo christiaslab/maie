@@ -39,6 +39,15 @@ struct SavedRequest: Identifiable, Codable {
     var status = RequestStatus.waiting
     var submittedAnswer: String?
     var context: ContextSlice?
+    // Optional fields preserve decoding of the original single-question history.
+    var groupID: UUID? = nil
+    var questionIndex: Int? = nil
+    var questionCount: Int? = nil
+    var multiSelect: Bool? = nil
+    var selectedOptions: [String]? = nil
+    var bridgeID: UUID { groupID ?? id }
+    var allowsMultiple: Bool { multiSelect == true }
+    var hasAnswer: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && draft.utf8.count <= 8_192 }
 }
 struct SavedSession: Identifiable, Codable {
     let id: String
@@ -98,6 +107,13 @@ enum TranscriptContext {
     }
 }
 
+struct QuestionNotice: Identifiable, Equatable {
+    let id: UUID
+    let sessionID: String
+    let title: String
+    let count: Int
+}
+
 @MainActor final class SessionStore: ObservableObject {
     @Published private(set) var sessions: [SavedSession] = []
     @Published var activeSessionID = ""
@@ -105,12 +121,16 @@ enum TranscriptContext {
     @Published var error = ""
     @Published var busySessionIDs = Set<String>()
     @Published var preview: ModelPreview?
+    @Published private(set) var questionNotice: QuestionNotice?
+    @Published private(set) var questionRevealID = UUID()
+    @Published private(set) var reviewingGroupID: UUID?
+    var editorFocused = false
     let connection: OpenAIConnection
     var onQuestion: (() -> Void)?
     private let runID = UUID()
     private var live: [UUID: (envelope: HookEnvelope, deadline: ContinuousClock.Instant)] = [:]
     private var consumed = Set<UUID>()
-    private var modelTasks: [String: (id: UUID, task: Task<Void, Never>)] = [:]
+    private var modelTasks: [String: (id: UUID, requestID: UUID, task: Task<Void, Never>)] = [:]
     private var approvedSendScopes: [String: ModelSendScope] = [:]
     private let modelResponder: (@MainActor (ModelPreview) async throws -> String)?
     private var timer: Timer?
@@ -121,9 +141,37 @@ enum TranscriptContext {
     private let historyURL: URL
     var activeSession: SavedSession? { sessions.first { $0.id == activeSessionID } }
     var activeRequest: SavedRequest? { activeSession?.requests.first { $0.id == activeRequestID } }
+    var activeGroup: [SavedRequest] {
+        guard let request = activeRequest else { return [] }
+        return activeSession?.requests.filter { $0.bridgeID == request.bridgeID } ?? []
+    }
+    var allAnswersReady: Bool {
+        guard let request = activeRequest, isLive(request.id), !activeGroup.isEmpty else { return false }
+        return activeGroup.allSatisfy { $0.status == .waiting && $0.hasAnswer }
+    }
+    var canReviewAnswers: Bool { activeGroup.count > 1 && allAnswersReady }
     var canSubmit: Bool {
-        guard let request = activeRequest else { return false }
-        return request.status == .waiting && isLive(request.id) && !request.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && request.draft.utf8.count <= 8_192
+        allAnswersReady && (activeGroup.count == 1 || reviewingGroupID == activeRequest?.bridgeID)
+    }
+    func isThinking(_ requestID: UUID) -> Bool { modelTasks.values.contains { $0.requestID == requestID } }
+    func discussionMessages(for request: SavedRequest) -> [MaieMessage] {
+        guard let session = activeSession else { return [] }
+        // Each page of a question set has its own conversation. Earlier single-question
+        // sessions retain their existing continuity and earlier-question labels.
+        return session.discussionMessages.filter { request.groupID == nil || $0.requestID == request.id }
+    }
+    func beginAnswerReview() { if canReviewAnswers { reviewingGroupID = activeRequest?.bridgeID; preview = nil } }
+    func endAnswerReview() { reviewingGroupID = nil }
+    func moveQuestion(_ offset: Int) {
+        guard let id = activeRequestID, let index = activeGroup.firstIndex(where: { $0.id == id }),
+              activeGroup.indices.contains(index + offset) else { return }
+        selectRequest(activeGroup[index + offset].id)
+    }
+    func dismissQuestionNotice() { questionNotice = nil }
+    func showNewQuestions() {
+        guard let notice = questionNotice else { return }
+        selectSession(notice.sessionID); selectRequest(notice.id)
+        questionRevealID = UUID(); questionNotice = nil
     }
     init(connection: OpenAIConnection, historyURL: URL = LocalStorage.root.appendingPathComponent("sessions.json"),
          modelResponder: (@MainActor (ModelPreview) async throws -> String)? = nil) {
@@ -200,18 +248,41 @@ enum TranscriptContext {
             if let r = sessions[s].requests.firstIndex(where: { $0.id == target }) { body(&sessions[s].requests[r]); persist(); return }
         }
     }
-    private func setStatus(_ id: UUID, _ status: RequestStatus) { updateRequest(id) { $0.status = status } }
+    private func setStatus(_ id: UUID, _ status: RequestStatus) {
+        let bridgeID = sessions.flatMap(\.requests).first { $0.id == id }?.bridgeID ?? id
+        if status != .waiting {
+            if questionNotice?.id == bridgeID { questionNotice = nil }
+            if reviewingGroupID == bridgeID { reviewingGroupID = nil }
+        }
+        for s in sessions.indices {
+            for r in sessions[s].requests.indices where sessions[s].requests[r].bridgeID == bridgeID {
+                sessions[s].requests[r].status = status
+            }
+        }
+        persist()
+    }
     func selectSession(_ id: String) {
         guard let session = sessions.first(where: { $0.id == id }) else { return }
-        activeSessionID = id; activeRequestID = session.requests.last?.id; preview = nil
+        activeSessionID = id
+        let last = session.requests.last
+        activeRequestID = session.requests.first { $0.bridgeID == last?.bridgeID }?.id
+        preview = nil; reviewingGroupID = nil
     }
-    func selectRequest(_ id: UUID) { guard activeSession?.requests.contains(where: { $0.id == id }) == true else { return }; activeRequestID = id; preview = nil }
+    func selectRequest(_ id: UUID) { guard activeSession?.requests.contains(where: { $0.id == id }) == true else { return }; activeRequestID = id; preview = nil; reviewingGroupID = nil }
     func setDraft(_ value: String) {
         guard let request = activeRequest, request.status != .submitted && request.status != .sending else { return }
-        updateRequest { $0.draft = value }; preview = nil
+        updateRequest { $0.draft = value; $0.selectedOptions = nil }; preview = nil; reviewingGroupID = nil
     }
     func setComposer(_ value: String) { updateRequest { $0.composer = value }; preview = nil }
-    func choose(_ option: MaieOption) { setDraft(option.title) }
+    func choose(_ option: MaieOption) {
+        guard let request = activeRequest, request.status != .submitted && request.status != .sending else { return }
+        var selected = request.allowsMultiple ? request.selectedOptions ?? [] : []
+        if selected.contains(option.title) { selected.removeAll { $0 == option.title } }
+        else { selected.append(option.title) }
+        let ordered = request.options.map(\.title).filter { selected.contains($0) }
+        updateRequest { $0.selectedOptions = ordered; $0.draft = ordered.joined(separator: ", ") }
+        preview = nil; reviewingGroupID = nil
+    }
     func acceptProposal() { guard let proposal = activeRequest?.proposal else { return }; setDraft(proposal); updateRequest { $0.proposal = nil } }
     func discardProposal() { updateRequest { $0.proposal = nil } }
     func enableContext(_ enabled: Bool) {
@@ -225,9 +296,10 @@ enum TranscriptContext {
         updateRequest { $0.context = context }; preview = nil
     }
     func isLive(_ id: UUID) -> Bool {
-        guard let item = live[id], ContinuousClock.now < item.deadline,
+        let bridgeID = sessions.flatMap(\.requests).first { $0.id == id }?.bridgeID ?? id
+        guard let item = live[bridgeID], ContinuousClock.now < item.deadline,
               kill(item.envelope.pid, 0) == 0,
-              let heartbeat = try? LocalStorage.read(Date.self, at: HookFiles.file(id, "heartbeat.json")) else { return false }
+              let heartbeat = try? LocalStorage.read(Date.self, at: HookFiles.file(bridgeID, "heartbeat.json")) else { return false }
         return abs(heartbeat.timeIntervalSinceNow) < 3
     }
     func ingest(_ envelope: HookEnvelope) throws {
@@ -241,23 +313,37 @@ enum TranscriptContext {
         let remaining = envelope.created.addingTimeInterval(envelope.timeout).timeIntervalSinceNow
         guard remaining > 0, remaining <= envelope.timeout + 1 else { consumed.insert(envelope.id); return }
         let event = try JSONSerialization.jsonObject(with: envelope.payload) as! [String: Any]
-        let question = (request.input["questions"] as! [[String: Any]])[0]
-        let options = (question["options"] as! [[String: Any]]).map { MaieOption(title: $0["label"] as! String, detail: $0["description"] as! String) }
-        let saved = SavedRequest(id: envelope.id, toolUseID: request.toolUseID, cwd: request.cwd,
-            transcriptPath: event["transcript_path"] as? String, question: request.question, options: options,
-            created: envelope.created, expiresAt: envelope.created.addingTimeInterval(envelope.timeout))
+        let rawQuestions = request.input["questions"] as! [[String: Any]]
+        let savedQuestions = rawQuestions.enumerated().map { index, raw -> SavedRequest in
+            let options = (raw["options"] as! [[String: Any]]).map { MaieOption(title: $0["label"] as! String, detail: $0["description"] as! String) }
+            var saved = SavedRequest(id: index == 0 ? envelope.id : UUID(), toolUseID: request.toolUseID, cwd: request.cwd,
+                transcriptPath: event["transcript_path"] as? String, question: request.questions[index].question, options: options,
+                created: envelope.created, expiresAt: envelope.created.addingTimeInterval(envelope.timeout))
+            saved.multiSelect = request.questions[index].multiSelect
+            if rawQuestions.count > 1 {
+                saved.groupID = envelope.id; saved.questionIndex = index; saved.questionCount = rawQuestions.count
+            }
+            return saved
+        }
         if let s = sessions.firstIndex(where: { $0.id == request.sessionID }) {
-            sessions[s].requests.append(saved)
-        } else { sessions.append(SavedSession(id: request.sessionID, requests: [saved])) }
+            sessions[s].requests.append(contentsOf: savedQuestions)
+        } else { sessions.append(SavedSession(id: request.sessionID, requests: savedQuestions)) }
         live[envelope.id] = (envelope, ContinuousClock.now.advanced(by: .seconds(remaining)))
         consumed.insert(envelope.id)
-        // Never steal an existing editor when another request arrives.
-        if activeRequest == nil || activeRequest?.status != .waiting && activeRequest?.status != .sending {
+        // A notice offers navigation without interrupting another editor or session.
+        let canSelect = activeRequest == nil || (activeSessionID == request.sessionID && !editorFocused &&
+            !busySessionIDs.contains(activeSessionID) && activeRequest?.status != .waiting && activeRequest?.status != .sending)
+        if canSelect {
             activeSessionID = request.sessionID; activeRequestID = envelope.id
+            preview = nil; reviewingGroupID = nil; questionRevealID = UUID()
         }
+        questionNotice = QuestionNotice(id: envelope.id, sessionID: request.sessionID,
+            title: URL(fileURLWithPath: request.cwd).lastPathComponent, count: savedQuestions.count)
         if let s = sessions.firstIndex(where: { $0.id == request.sessionID }), sessions[s].contextEnabled {
-            let slice = TranscriptContext.capture(path: saved.transcriptPath, sessionID: request.sessionID, question: saved.question)
-            updateRequest(saved.id) { $0.context = slice }
+            for saved in savedQuestions {
+                let slice = TranscriptContext.capture(path: saved.transcriptPath, sessionID: request.sessionID, question: saved.question)
+                updateRequest(saved.id) { $0.context = slice }
+            }
         }
         persist(); onQuestion?()
     }
@@ -277,7 +363,7 @@ enum TranscriptContext {
             }
             for id in Array(live.keys) {
                 if let receipt = try? LocalStorage.read(HookReceipt.self, at: HookFiles.file(id, "receipt.json")), receipt.id == id {
-                    updateRequest(id) { $0.status = receipt.submitted ? .submitted : .cancelled }
+                    setStatus(id, receipt.submitted ? .submitted : .cancelled)
                     live.removeValue(forKey: id)
                     try? FileManager.default.removeItem(at: HookFiles.folder(id))
                 } else if !isLive(id) {
@@ -290,30 +376,36 @@ enum TranscriptContext {
     func submit() {
         guard canSubmit, let request = activeRequest else { return }
         do {
-            // The helper independently checks its original parent and continuous deadline.
-            try LocalStorage.write(HookDecision(id: request.id, sessionID: activeSessionID,
-                toolUseID: request.toolUseID, answer: request.draft), to: HookFiles.file(request.id, "decision.json"))
-            updateRequest { $0.submittedAnswer = $0.draft; $0.status = .sending }
+            // One complete, explicit submission covers the original tool call, never a partial page.
+            let group = activeGroup
+            let answers = Dictionary(uniqueKeysWithValues: group.map { ($0.question, $0.draft) })
+            let decision = HookDecision(id: request.bridgeID, sessionID: activeSessionID,
+                toolUseID: request.toolUseID, answer: group.count == 1 ? request.draft : nil,
+                answers: group.count > 1 ? answers : nil)
+            try LocalStorage.write(decision, to: HookFiles.file(request.bridgeID, "decision.json"), limit: HookDecision.maxBytes)
+            for saved in group { updateRequest(saved.id) { $0.submittedAnswer = $0.draft; $0.status = .sending } }
+            reviewingGroupID = nil
         } catch { self.error = "Could not deliver the answer. Your draft is saved." }
     }
     func cancel() {
         guard let request = activeRequest, isLive(request.id), request.status == .waiting else { return }
         do {
-            try LocalStorage.write(HookDecision(id: request.id, sessionID: activeSessionID,
-                toolUseID: request.toolUseID, answer: nil), to: HookFiles.file(request.id, "decision.json"))
-            setStatus(request.id, .cancelled)
+            try LocalStorage.write(HookDecision(id: request.bridgeID, sessionID: activeSessionID,
+                toolUseID: request.toolUseID, answer: nil), to: HookFiles.file(request.bridgeID, "decision.json"))
+            setStatus(request.bridgeID, .cancelled)
         } catch { self.error = "Could not cancel the request. It will expire at its deadline." }
     }
     func deleteSession(_ sessionID: String) {
         guard let session = sessions.first(where: { $0.id == sessionID }) else { return }
         for request in session.requests where isLive(request.id) {
-            try? LocalStorage.write(HookDecision(id: request.id, sessionID: sessionID, toolUseID: request.toolUseID, answer: nil), to: HookFiles.file(request.id, "decision.json"))
-            live.removeValue(forKey: request.id)
+            try? LocalStorage.write(HookDecision(id: request.bridgeID, sessionID: sessionID, toolUseID: request.toolUseID, answer: nil), to: HookFiles.file(request.bridgeID, "decision.json"))
+            live.removeValue(forKey: request.bridgeID)
         }
         modelTasks[sessionID]?.task.cancel(); modelTasks.removeValue(forKey: sessionID)
         busySessionIDs.remove(sessionID)
         approvedSendScopes.removeValue(forKey: sessionID)
         sessions.removeAll { $0.id == sessionID }
+        if questionNotice?.sessionID == sessionID { questionNotice = nil }
         if preview?.sessionID == sessionID { preview = nil }
         if activeSessionID == sessionID {
             activeSessionID = ""; activeRequestID = nil
@@ -423,7 +515,7 @@ extension SessionStore {
         guard let request = activeRequest, let session = activeSession else { return }
         let composer = starter ?? request.composer
         guard action != .discuss || !composer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        guard action != .suggest || !request.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !session.messages.isEmpty else { return }
+        guard action != .suggest || !request.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !discussionMessages(for: request).isEmpty else { return }
         let options = request.options.map { "\($0.title): \($0.detail)" }.joined(separator: "\n")
         let context = session.contextEnabled ? request.context?.text ?? "" : ""
         let priorAnswers = session.requests.prefix(while: { $0.id != request.id })
@@ -444,7 +536,7 @@ extension SessionStore {
         """
         var input: [[String: Any]] = [["role": "user", "content": data]]
         // Continue the same session, bounded explicitly. Never mix Claude sessions.
-        let history = Array(session.messages.suffix(24))
+        let history = Array(session.messages.filter { request.groupID == nil || $0.requestID == request.id }.suffix(24))
         let historyText = history.map { message -> (role: String, text: String) in
             let sourceQuestion = session.requests.first { $0.id == message.requestID }?.question ?? "Question unavailable"
             let prefix = message.requestID == request.id ? "" : "[Earlier Claude question, for context only: \(String(sourceQuestion.prefix(2_000)))]\n"
@@ -494,7 +586,7 @@ extension SessionStore {
         if pending.action == .discuss { updateRequest(pending.requestID) { $0.composer = "" } }
         persist()
         let taskID = UUID()
-        modelTasks[pending.sessionID] = (taskID, Task { [weak self] in
+        modelTasks[pending.sessionID] = (taskID, pending.requestID, Task { [weak self] in
             guard let self else { return }
             defer {
                 // A deleted session can receive a new request before cancellation settles.

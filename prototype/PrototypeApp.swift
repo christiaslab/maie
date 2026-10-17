@@ -43,7 +43,11 @@ final class ThinkingPanel: NSPanel {
             .clipShape(RoundedRectangle(cornerRadius: 22))
             .overlay(RoundedRectangle(cornerRadius: 22).stroke(Color.primary.opacity(0.10), lineWidth: 1))
         panel.contentView = NSHostingView(rootView: view)
-        store.onQuestion = { [weak self] in self?.show() }
+        store.onQuestion = { [weak self] in
+            // Bring the small panel into view without taking keyboard focus from Claude.
+            self?.keepOnScreen()
+            self?.panel.orderFrontRegardless()
+        }
 
         if !panel.setFrameUsingName("MaiePrototypePanel") {
             let bounds = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)

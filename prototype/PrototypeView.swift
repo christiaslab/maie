@@ -11,6 +11,8 @@ private struct ConversationScrollState: Equatable {
     let proposal: String?
     let isThinking: Bool
     let isExpanded: Bool
+    let isWaiting: Bool
+    let revealID: UUID
 }
 
 private struct ConversationEnd: NSViewRepresentable {
@@ -18,6 +20,8 @@ private struct ConversationEnd: NSViewRepresentable {
 
     final class EndView: NSView {
         var scrollState: ConversationScrollState?
+        var scrollToQuestion = false
+        var animateScroll = false
         private var needsScroll = false
         private var scrollScheduled = false
 
@@ -46,10 +50,17 @@ private struct ConversationEnd: NSViewRepresentable {
                 scroll.layoutSubtreeIfNeeded()
                 document.layoutSubtreeIfNeeded()
                 let clip = scroll.contentView
-                let bottom = document.isFlipped
-                    ? max(document.bounds.minY, document.bounds.maxY - clip.bounds.height)
+                let start = document.isFlipped ? document.bounds.minY
+                    : max(document.bounds.minY, document.bounds.maxY - clip.bounds.height)
+                let end = document.isFlipped ? max(document.bounds.minY, document.bounds.maxY - clip.bounds.height)
                     : document.bounds.minY
-                clip.scroll(to: NSPoint(x: clip.bounds.minX, y: bottom))
+                let point = NSPoint(x: clip.bounds.minX, y: self.scrollToQuestion ? start : end)
+                if self.animateScroll && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+                    NSAnimationContext.runAnimationGroup { context in
+                        context.duration = 0.18
+                        clip.animator().setBoundsOrigin(point)
+                    }
+                } else { clip.scroll(to: point) }
                 scroll.reflectScrolledClipView(clip)
             }
         }
@@ -57,6 +68,9 @@ private struct ConversationEnd: NSViewRepresentable {
     func makeNSView(context: Context) -> EndView { EndView() }
     func updateNSView(_ view: EndView, context: Context) {
         guard view.scrollState != state else { return }
+        let previous = view.scrollState
+        view.scrollToQuestion = previous.map { $0.requestID != state.requestID || $0.revealID != state.revealID } ?? state.isWaiting
+        view.animateScroll = previous != nil && view.scrollToQuestion
         view.scrollState = state
         view.requestScroll()
     }
@@ -81,6 +95,7 @@ struct PrototypeView: View {
     let hide: () -> Void
     let resize: (Bool) -> Void
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var presentation = PrototypePresentation()
     @FocusState private var focus: Input?
     private enum Input { case draft, discussion }
@@ -98,9 +113,24 @@ struct PrototypeView: View {
         VStack(spacing: 0) {
             header
             Rectangle().fill(line).frame(height: 1)
+            if let notice = store.questionNotice {
+                HStack(spacing: 8) {
+                    Circle().fill(accent).frame(width: 5, height: 5)
+                    Text(notice.count == 1 ? "New question" : "New questions").fontWeight(.medium)
+                    Text(notice.title).foregroundStyle(muted).lineLimit(1)
+                    Spacer(minLength: 4)
+                    Button("Show") { store.showNewQuestions() }.foregroundStyle(accent)
+                    Button { store.dismissQuestionNotice() } label: { Image(systemName: "xmark") }
+                        .help("Dismiss notice")
+                }.font(.system(size: 11)).buttonStyle(.plain)
+                    .padding(.horizontal, 22).padding(.vertical, 10).background(accent.opacity(0.07))
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
             if let request = store.activeRequest, let session = store.activeSession {
                 requestHeader(request, session: session)
-                workingContent(request, session: session)
+                if store.reviewingGroupID == request.bridgeID && store.activeGroup.count > 1 {
+                    answerReview(request)
+                } else { workingContent(request, session: session) }
             } else {
                 Spacer()
                 VStack(alignment: .leading, spacing: 14) {
@@ -132,11 +162,19 @@ struct PrototypeView: View {
             }.font(.system(size: 10)).foregroundStyle(muted).padding(.vertical, 12)
         }
         .foregroundStyle(ink).background(paper).tint(accent)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: store.questionNotice?.id)
+        .task(id: store.questionNotice?.id) {
+            guard let notice = store.questionNotice, notice.id == store.activeRequest?.bridgeID else { return }
+            do { try await Task.sleep(nanoseconds: 5_000_000_000) } catch { return }
+            if store.questionNotice?.id == notice.id { store.dismissQuestionNotice() }
+        }
         .onAppear { if !connection.isConnected { presentation.showsConnection = true } }
         .onReceive(NotificationCenter.default.publisher(for: .maieFocusDiscussion)) { _ in
             presentation.discussionOpen = true; focus = .discussion
         }
         .onChange(of: store.activeRequestID) { _ in focus = nil }
+        .onChange(of: focus) { store.editorFocused = $0 != nil }
+        .onDisappear { store.editorFocused = false }
         .onChange(of: connection.selectedModel) { _ in store.preview = nil }
         .onChange(of: connection.selectedEffort) { _ in store.preview = nil }
         .onChange(of: connection.authorizationRevision) { _ in store.preview = nil }
@@ -185,12 +223,16 @@ struct PrototypeView: View {
                 Spacer()
                 Button { presentation.showsSessions.toggle() } label: {
                     HStack(spacing: 5) {
-                        let waiting = store.sessions.flatMap(\.requests).filter { $0.status == .waiting && $0.id != request.id }.count
+                        let waiting = Set(store.sessions.flatMap(\.requests).filter { $0.status == .waiting && $0.bridgeID != request.bridgeID }.map(\.bridgeID)).count
                         if waiting > 0 { Circle().fill(accent).frame(width: 5, height: 5); Text("+\(waiting)") }
                         Text("Sessions"); Image(systemName: "chevron.down").font(.system(size: 8))
                     }.font(.system(size: 11))
                 }.buttonStyle(.plain)
                     .popover(isPresented: $presentation.showsSessions) { sessionsPopover }
+            }
+            if let index = request.questionIndex, let count = request.questionCount {
+                Text("Question \(index + 1) of \(count)")
+                    .font(.system(size: 11, weight: .medium)).foregroundStyle(accent)
             }
             HStack {
                 Text(statusText(request.status)).font(.system(size: 11)).foregroundStyle(muted)
@@ -240,12 +282,20 @@ struct PrototypeView: View {
                         Text(request.question).font(.system(size: 23, design: .serif)).lineSpacing(3)
                             .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                         VStack(alignment: .leading, spacing: 8) {
+                            Text(request.allowsMultiple ? "Choose one or more, or write your own answer." : "Choose an option or write your own answer.")
+                                .font(.system(size: 11)).foregroundStyle(muted)
                             ForEach(request.options) { option in
                                 Button { store.choose(option) } label: {
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(option.title).font(.system(size: 12, weight: .medium))
-                                        Text(option.detail).font(.system(size: 11)).foregroundStyle(muted)
-                                    }.frame(maxWidth: .infinity, alignment: .leading).padding(10)
+                                    HStack(alignment: .top, spacing: 9) {
+                                        let selected = request.selectedOptions?.contains(option.title) == true
+                                        Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                                            .font(.system(size: 13)).foregroundStyle(selected ? accent : muted)
+                                            .padding(.top, 1)
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(option.title).font(.system(size: 12, weight: .medium))
+                                            Text(option.detail).font(.system(size: 11)).foregroundStyle(muted)
+                                        }.frame(maxWidth: .infinity, alignment: .leading)
+                                    }.padding(10)
                                         .background(ink.opacity(0.025), in: RoundedRectangle(cornerRadius: 11))
                                         .overlay(RoundedRectangle(cornerRadius: 11).stroke(line, lineWidth: 1))
                                 }.buttonStyle(.plain).disabled(request.status == .sending || request.status == .submitted)
@@ -253,7 +303,7 @@ struct PrototypeView: View {
                             }
                         }
                         contextControls(session)
-                        if presentation.discussionOpen { discussion(session) }
+                        if presentation.discussionOpen { discussion(session, request: request) }
                         if let proposal = request.proposal {
                             VStack(alignment: .leading, spacing: 10) {
                             Text("Proposed answer").font(.system(size: 11, weight: .medium))
@@ -267,9 +317,10 @@ struct PrototypeView: View {
                                 .id("proposal-\(request.id)")
                         }
                         ConversationEnd(state: ConversationScrollState(requestID: request.id,
-                            messageCount: session.messages.count, proposal: request.proposal,
-                            isThinking: store.busySessionIDs.contains(session.id),
-                            isExpanded: presentation.discussionOpen))
+                            messageCount: store.discussionMessages(for: request).count, proposal: request.proposal,
+                            isThinking: store.isThinking(request.id),
+                            isExpanded: presentation.discussionOpen, isWaiting: request.status == .waiting,
+                            revealID: store.questionRevealID))
                             .frame(height: 1).accessibilityHidden(true)
                     }.padding(.horizontal, 22).padding(.bottom, 16)
             }
@@ -283,15 +334,57 @@ struct PrototypeView: View {
                         .font(.system(size: 12)).foregroundStyle(muted)
                 }.buttonStyle(.plain)
                 Spacer()
-                Button { store.submit() } label: {
-                    HStack(spacing: 7) { Text("Send to Claude"); Image(systemName: "arrow.up.right").font(.system(size: 10)) }
-                        .font(.system(size: 12, weight: .medium)).foregroundStyle(store.canSubmit ? paper : muted)
-                        .padding(.horizontal, 14).padding(.vertical, 11)
-                        .background(store.canSubmit ? accent : ink.opacity(0.055), in: RoundedRectangle(cornerRadius: 11))
-                }.buttonStyle(.plain).disabled(!store.canSubmit)
-                    .help("Send this draft to Claude")
+                if store.activeGroup.count > 1 {
+                    Button("Previous") { store.moveQuestion(-1) }
+                        .buttonStyle(.plain).font(.system(size: 12)).foregroundStyle(muted)
+                        .disabled(request.questionIndex == 0)
+                    let last = request.questionIndex == store.activeGroup.count - 1
+                    primaryAction(last ? "Review answers" : "Next", enabled: !last || store.canReviewAnswers) {
+                        if last { store.beginAnswerReview() } else { store.moveQuestion(1) }
+                    }
+                } else {
+                    primaryAction("Send to Claude", enabled: store.canSubmit) { store.submit() }
+                        .help("Send this draft to Claude")
+                }
                 // No Return/default shortcut can submit the final answer.
             }.padding(.horizontal, 22).padding(.top, 12)
+        }
+    }
+
+    private func primaryAction(_ title: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(enabled ? paper : muted)
+                .padding(.horizontal, 14).padding(.vertical, 11)
+                .background(enabled ? accent : ink.opacity(0.055), in: RoundedRectangle(cornerRadius: 11))
+        }.buttonStyle(.plain).disabled(!enabled)
+    }
+
+    private func answerReview(_ request: SavedRequest) -> some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    Text("Your answers").font(.system(size: 23, design: .serif))
+                    Text("Review all answers before sending them together.")
+                        .font(.system(size: 12)).foregroundStyle(muted)
+                    ForEach(store.activeGroup) { saved in
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(alignment: .top) {
+                                Text(saved.question).font(.system(size: 13, weight: .medium))
+                                Spacer()
+                                Button("Edit") { store.selectRequest(saved.id) }
+                                    .font(.system(size: 11)).buttonStyle(.plain).foregroundStyle(accent)
+                            }
+                            Text(saved.draft).font(.system(size: 13)).lineSpacing(3).textSelection(.enabled)
+                            Rectangle().fill(line).frame(height: 1).padding(.top, 8)
+                        }
+                    }
+                }.frame(maxWidth: .infinity, alignment: .leading).padding(22)
+            }
+            HStack {
+                Button("Back") { store.endAnswerReview() }.buttonStyle(.plain)
+                Spacer()
+                primaryAction("Send to Claude", enabled: store.canSubmit) { store.submit() }
+            }.font(.system(size: 12)).padding(.horizontal, 22).padding(.top, 12)
         }
     }
 
@@ -322,15 +415,16 @@ struct PrototypeView: View {
         }.frame(width: 380, height: 430)
     }
 
-    private func discussion(_ session: SavedSession) -> some View {
+    private func discussion(_ session: SavedSession, request: SavedRequest) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             Rectangle().fill(line).frame(height: 1)
-            if session.messages.isEmpty {
+            Text("Discuss").font(.system(size: 11, weight: .medium)).foregroundStyle(muted)
+            if store.discussionMessages(for: request).isEmpty {
                 Text("What would you like to understand?").font(.system(size: 15, design: .serif))
                 Button("Explain these options") { store.requestModel(.discuss, starter: "I do not understand these options. Please explain them simply.") }
                     .buttonStyle(.plain).font(.system(size: 12)).foregroundStyle(accent)
             }
-            ForEach(session.discussionMessages) { message in
+            ForEach(store.discussionMessages(for: request)) { message in
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
                         Text(message.role == "user" ? "You" : "maie")
@@ -348,7 +442,11 @@ struct PrototypeView: View {
                     .id(message.id)
             }
             if store.busySessionIDs.contains(session.id) {
-                HStack { ProgressView().controlSize(.small); Text("Thinking…").font(.system(size: 11)); Button("Stop") { store.stopResponse() } }
+                HStack {
+                    ProgressView().controlSize(.small)
+                    Text(store.isThinking(request.id) ? "Thinking…" : "Replying to another question…").font(.system(size: 11))
+                    Button("Stop") { store.stopResponse() }
+                }
             }
         }
     }
@@ -357,7 +455,7 @@ struct PrototypeView: View {
             Picker("Model", selection: $connection.selectedModel) {
                 ForEach(connection.models) { Text($0.name).tag($0.id) }
             }
-            Picker("Effort", selection: Binding(get: { connection.selectedEffort }, set: connection.selectEffort)) {
+            Picker("Thinking time", selection: Binding(get: { connection.selectedEffort }, set: connection.selectEffort)) {
                 ForEach(connection.effortChoices, id: \.self) { Text($0.label).tag($0) }
             }
         } label: {
@@ -369,8 +467,8 @@ struct PrototypeView: View {
         .font(.system(size: 11)).foregroundStyle(muted)
         .frame(maxWidth: 280, alignment: .leading)
         .disabled(connection.models.isEmpty || connection.busy || !store.busySessionIDs.isEmpty)
-        .help("Choose a model and how much it should reason")
-        .accessibilityLabel("Model and reasoning effort")
+        .help("Choose a model and thinking time")
+        .accessibilityLabel("Model and thinking time")
     }
 
     private func composer(_ request: SavedRequest, session: SavedSession) -> some View {
@@ -401,7 +499,7 @@ struct PrototypeView: View {
                 Text("Your answer").font(.system(size: 11, weight: .medium))
                 Spacer()
                 Button("Suggest answer") { store.requestModel(.suggest) }
-                    .disabled((request.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && session.messages.isEmpty) || connection.busy || store.busySessionIDs.contains(session.id))
+                    .disabled((request.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && store.discussionMessages(for: request).isEmpty) || connection.busy || store.busySessionIDs.contains(session.id))
             }.font(.system(size: 10)).buttonStyle(.plain)
             TextEditor(text: Binding(get: { store.activeRequest?.draft ?? "" }, set: store.setDraft))
                 .font(.system(size: 13)).lineSpacing(3).scrollContentBackground(.hidden).focused($focus, equals: .draft)
@@ -416,7 +514,9 @@ struct PrototypeView: View {
             } else if request.draft.utf8.count > 8_192 {
                 Text("Draft is too long to send (8 KiB limit).").font(.system(size: 10)).foregroundStyle(.orange)
             }
-        }.padding(.horizontal, 22).padding(.top, 6)
+        }.padding(.horizontal, 22).padding(.top, 12).padding(.bottom, 10)
+            .background(accent.opacity(0.025))
+            .overlay(alignment: .top) { Rectangle().fill(line).frame(height: 1) }
     }
     private var sessionsPopover: some View {
         ScrollView {
@@ -431,7 +531,7 @@ struct PrototypeView: View {
                                 store.selectSession(session.id); store.selectRequest(request.id); presentation.showsSessions = false
                             } label: {
                                 VStack(alignment: .leading, spacing: 3) {
-                                    Text(request.question).lineLimit(2)
+                                    Text(request.questionCount.map { "Question \((request.questionIndex ?? 0) + 1) of \($0) · \(request.question)" } ?? request.question).lineLimit(2)
                                     Text("\(request.created.formatted(date: .abbreviated, time: .shortened)) · \(statusText(request.status))").foregroundStyle(.secondary)
                                 }.font(.system(size: 11)).padding(6)
                             }.buttonStyle(.plain)

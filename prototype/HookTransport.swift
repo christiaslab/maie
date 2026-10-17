@@ -22,6 +22,8 @@ struct HookDecision: Codable {
     let sessionID: String
     let toolUseID: String
     let answer: String?
+    var answers: [String: String]? = nil
+    static let maxBytes = 524_288
 }
 
 struct HookReceipt: Codable {
@@ -54,9 +56,14 @@ enum HookBridgeClient {
             guard let liveService = try? LocalStorage.read(ServiceLease.self, at: HookFiles.lease),
                   liveService.runID == lease.runID, liveService.recent else { break }
             try LocalStorage.write(Date(), to: HookFiles.file(id, "heartbeat.json"))
-            if let response = try? LocalStorage.read(HookDecision.self, at: HookFiles.file(id, "decision.json"), limit: 32_768) {
+            if let response = try? LocalStorage.read(HookDecision.self, at: HookFiles.file(id, "decision.json"), limit: HookDecision.maxBytes) {
                 guard response.id == id, response.sessionID == request.sessionID, response.toolUseID == request.toolUseID,
-                      lifetime.isActive(parentID: getppid()), let answer = response.answer else { break }
+                      lifetime.isActive(parentID: getppid()) else { break }
+                if let answers = response.answers {
+                    guard response.answer == nil else { break }
+                    return (try request.approvedOutput(answers: answers), receiptURL, id)
+                }
+                guard let answer = response.answer else { break }
                 return (try request.approvedOutput(answer: answer), receiptURL, id)
             }
             Thread.sleep(forTimeInterval: 0.15)

@@ -7,16 +7,26 @@ and offline checks. There are no third-party runtime packages.
 ## Request flow
 
 1. Claude Code invokes the helper before AskUserQuestion.
-2. The helper validates one single-choice question and creates a per-request
+2. The helper validates one to four questions and creates a per-request
    packet in Maie's private application-support directory.
 3. The app shows the question and maintains a separate discussion and draft.
 4. A human may explicitly request an OpenAI explanation or answer suggestion.
-5. Only Send to Claude returns the exact human-approved draft to that helper.
+5. Only Send to Claude returns the complete set of exact human-approved answers
+   to that helper. Previous / Next retains answers locally. Multi-question calls
+   require a final review; a single question keeps its direct explicit send.
 
 The helper owns its stdin/stdout and final decision. Session ID, request ID,
 tool-use ID, app run ID and a continuous-clock deadline bind the response.
 Heartbeat loss, cancellation, quit or expiry produces no approved answer.
-An app restart retains history but makes old pending questions inactive.
+Pages in a question set share one bridge request, tool-use identity, lifetime
+and receipt. Each page has its own stable local ID, draft, composer, proposal and
+discussion. The helper validates that answer keys match every original question
+exactly; duplicate question texts are rejected because Claude keys answers by
+question text. Multi-select labels are joined with commas; the editable final
+text remains authoritative. Omitted multiSelect means false; numeric booleans
+are rejected. Unknown original tool-input fields are preserved.
+An app restart retains history but makes all pages of old pending sets inactive.
+Optional group fields allow existing single-question history to decode unchanged.
 The helper waits up to 30 minutes; the configured host timeout is 1,830 seconds.
 Another host hook can still block a returned answer.
 
@@ -69,9 +79,21 @@ account labels, host ID, discussions and drafts; it is not encrypted by Maie.
 Directory/file permissions are 0700/0600. History reads/writes share an
 8,000,000-byte bound and preserve the previous saved file if a write is too large.
 Old oversized files need manual recovery. Model text is bounded to 256 KiB;
-drafts sent to Claude are bounded to 8 KiB.
+each answer sent to Claude is bounded to 8 KiB. Helper decision packets have a
+512 KiB bound to allow JSON escaping of four answers and their question keys;
+the original input retains its 64 KiB bound.
 
 The API-key route requires explicit activation and separate billing. Errors
 never switch routes automatically. Quota totals are not imported; Manage usage
 opens the provider's settings. Future providers, plugins and MCP are outside
 this prototype's implementation.
+
+## Presentation
+
+Incoming questions publish a small notice. An existing waiting editor, model
+response or another active session keeps its selection; Show explicitly opens
+the new set. Automatically selected questions and page navigation scroll to the
+question, while discussion changes scroll to the conversation end. The panel
+orders forward without activating the app or taking keyboard focus. Motion
+respects the system reduced-motion preference. Notices and review state are
+presentation state, not persisted approvals or automatic model requests.

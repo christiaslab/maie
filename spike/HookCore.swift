@@ -3,13 +3,20 @@ import CoreFoundation
 
 enum ProbeError: Error { case invalidRequest, unsupportedQuestion, invalidAnswer }
 
+struct QuestionItem {
+    let question: String
+    let options: [String]
+    let multiSelect: Bool
+}
+
 struct QuestionRequest {
     let sessionID: String
     let toolUseID: String
     let cwd: String
     let input: [String: Any]
-    let question: String
-    let options: [String]
+    let questions: [QuestionItem]
+    var question: String { questions[0].question }
+    var options: [String] { questions[0].options }
 
     static func parse(_ data: Data) throws -> QuestionRequest? {
         guard data.count <= 65_536,
@@ -21,34 +28,52 @@ struct QuestionRequest {
               let toolID = event["tool_use_id"] as? String, !toolID.isEmpty,
               let cwd = event["cwd"] as? String, cwd.hasPrefix("/"),
               let input = event["tool_input"] as? [String: Any],
-              let questions = input["questions"] as? [[String: Any]] else { throw ProbeError.invalidRequest }
-        // This disposable probe deliberately supports one single-choice question only.
-        guard questions.count == 1, input["answers"] == nil, input["response"] == nil,
-              let question = questions[0]["question"] as? String,
-              !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              question.count <= 4_000,
-              let multiSelect = questions[0]["multiSelect"] as? NSNumber,
-              CFGetTypeID(multiSelect) == CFBooleanGetTypeID(), !multiSelect.boolValue,
-              let options = questions[0]["options"] as? [[String: Any]],
-              (2...4).contains(options.count) else { throw ProbeError.unsupportedQuestion }
-        let labels = try options.map { option -> String in
-            guard let label = option["label"] as? String, !label.isEmpty,
-                  let description = option["description"] as? String else { throw ProbeError.invalidRequest }
-            return "• \(label) — \(description)"
+              let rawQuestions = input["questions"] as? [[String: Any]],
+              (1...4).contains(rawQuestions.count), input["answers"] == nil,
+              input["response"] == nil else { throw ProbeError.invalidRequest }
+        let questions = try rawQuestions.map { raw -> QuestionItem in
+            guard let question = raw["question"] as? String,
+                  !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  question.count <= 4_000,
+                  let options = raw["options"] as? [[String: Any]],
+                  (2...4).contains(options.count) else { throw ProbeError.unsupportedQuestion }
+            let multiSelect: Bool
+            if let value = raw["multiSelect"] {
+                guard let boolean = value as? NSNumber, CFGetTypeID(boolean) == CFBooleanGetTypeID() else {
+                    throw ProbeError.invalidRequest
+                }
+                multiSelect = boolean.boolValue
+            } else { multiSelect = false }
+            var labels = Set<String>()
+            let descriptions = try options.map { option -> String in
+                guard let label = option["label"] as? String,
+                      !label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                      labels.insert(label).inserted,
+                      let description = option["description"] as? String else { throw ProbeError.invalidRequest }
+                return "• \(label) — \(description)"
+            }
+            return QuestionItem(question: question, options: descriptions, multiSelect: multiSelect)
         }
+        // Claude keys answers by exact question text, so duplicate keys cannot be represented safely.
+        guard Set(questions.map(\.question)).count == questions.count else { throw ProbeError.invalidRequest }
         return QuestionRequest(sessionID: session, toolUseID: toolID, cwd: cwd,
-                               input: input, question: question, options: labels)
+                               input: input, questions: questions)
     }
 
     func approvedOutput(answer: String) throws -> [String: Any] {
-        guard !answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              answer.utf8.count <= 8_192 else { throw ProbeError.invalidAnswer }
+        guard questions.count == 1 else { throw ProbeError.invalidAnswer }
+        return try approvedOutput(answers: [question: answer])
+    }
+    func approvedOutput(answers: [String: String]) throws -> [String: Any] {
+        guard Set(answers.keys) == Set(questions.map(\.question)), answers.values.allSatisfy({
+            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.utf8.count <= 8_192
+        }) else { throw ProbeError.invalidAnswer }
         var updated = input
-        updated["answers"] = [question: answer]
+        updated["answers"] = answers
         return ["hookSpecificOutput": [
             "hookEventName": "PreToolUse",
             "permissionDecision": "allow",
-            "permissionDecisionReason": "The user explicitly submitted this answer in the Maie probe.",
+            "permissionDecisionReason": "The user explicitly submitted these answers in Maie.",
             "updatedInput": updated
         ]]
     }

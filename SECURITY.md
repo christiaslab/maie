@@ -22,7 +22,9 @@ supported version. Review changes before building or enabling its hook.
   or loading of external agent configuration.
 - The helper binds decisions to the originating session/request, validates the
   original tool input and rechecks lifetime before returning an approved answer.
-  Cancellation, transport loss and expiry do not synthesize an answer.
+  Every answer in a question set must match an original question; partial sets
+  are rejected. All pages share one deadline and receipt. Cancellation, transport
+  loss and expiry do not synthesize an answer.
 - Local JSON uses a private directory and restricted files, bounded reads and
   atomic replacement. Restored pending requests are inactive.
 

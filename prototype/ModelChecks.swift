@@ -3,6 +3,9 @@ import Security
 
 @main struct ModelChecks {
     @MainActor static func main() async throws {
+        try checkQuestionSets()
+        try await checkQuestionTaskRouting()
+        if CommandLine.arguments.contains("--questions-only") { return }
         try await checkRefreshLifecycle()
         try await checkReplacementTask()
         if CommandLine.arguments.contains("--refresh-only") { return }
@@ -452,6 +455,181 @@ import Security
 }
 
 extension ModelChecks {
+    @MainActor static func checkQuestionSets() throws {
+        let previousRoot = ProcessInfo.processInfo.environment["MAIE_DATA_DIR"]
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("maie-question-set-" + UUID().uuidString)
+        setenv("MAIE_DATA_DIR", root.path, 1)
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            if let previousRoot { setenv("MAIE_DATA_DIR", previousRoot, 1) } else { unsetenv("MAIE_DATA_DIR") }
+        }
+        let connection = OpenAIConnection(loadSaved: false)
+        connection.models = [ModelChoice(id: "test-model", name: "Test")]
+        connection.selectedModel = "test-model"; connection.billing = "OpenAI API · separate billing"
+        let store = SessionStore(connection: connection, modelResponder: { _ in
+            preconditionFailure("A question-set preview attempted inference")
+        })
+        try store.start(); defer { store.stop() }
+        let runID = try LocalStorage.read(ServiceLease.self, at: HookFiles.lease).runID
+        func payload(_ session: String, _ tool: String, count: Int = 4) -> [String: Any] {
+            let questions: [[String: Any]] = (0..<count).map { index in
+                ["question": "Synthetic question \(index + 1)?", "multiSelect": index == 1,
+                 "options": [["label": "First", "description": "One"], ["label": "Second", "description": "Two"],
+                             ["label": "Third", "description": "Three"], ["label": "Fourth", "description": "Four"]]]
+            }
+            return ["hook_event_name": "PreToolUse", "tool_name": "AskUserQuestion", "session_id": session,
+                    "tool_use_id": tool, "cwd": "/tmp/fictional-project", "tool_input": ["questions": questions, "unknown": "preserve"]]
+        }
+        func incoming(_ session: String, _ tool: String, count: Int = 4) throws -> HookEnvelope {
+            let id = UUID()
+            try LocalStorage.directory(HookFiles.folder(id))
+            try LocalStorage.write(Date(), to: HookFiles.file(id, "heartbeat.json"))
+            return HookEnvelope(id: id, runID: runID, pid: getpid(), created: Date(), timeout: 1_800,
+                payload: try JSONSerialization.data(withJSONObject: payload(session, tool, count: count)))
+        }
+        for count in 1...4 {
+            var value = payload("optional-flag", "optional-flag", count: count)
+            var input = value["tool_input"] as! [String: Any]
+            var questions = input["questions"] as! [[String: Any]]
+            questions[0].removeValue(forKey: "multiSelect")
+            input["questions"] = questions; value["tool_input"] = input
+            let request = try QuestionRequest.parse(JSONSerialization.data(withJSONObject: value))!
+            precondition(request.questions.count == count && !request.questions[0].multiSelect)
+        }
+        let batch = try incoming("batch-session", "batch-tool")
+        let parsed = try QuestionRequest.parse(batch.payload)!
+        precondition(parsed.questions.count == 4 && parsed.questions[1].multiSelect)
+        let exact = "  \u{0394}\u{03bf}\u{03ba}\u{03b9}\u{03bc}\u{03ae}\n\"quotes\" $(literal) \u{1fae7}\n"
+        // Old history has none of the optional group/selection fields.
+        var oldQuestion = SavedRequest(id: UUID(), toolUseID: "old-tool", cwd: "/tmp/fictional-project", transcriptPath: nil,
+            question: "Old saved question?", options: [], created: Date(), expiresAt: .distantPast)
+        oldQuestion.status = .inactive; oldQuestion.draft = exact; oldQuestion.composer = "Saved old composer"
+        let oldHistory = root.appendingPathComponent("old-history.json")
+        try LocalStorage.write([SavedSession(id: "old-session", requests: [oldQuestion])], to: oldHistory)
+        let oldStore = SessionStore(connection: connection, historyURL: oldHistory)
+        precondition(oldStore.activeRequest?.draft == exact && oldStore.activeRequest?.composer == "Saved old composer")
+        precondition(oldStore.activeRequest?.groupID == nil && oldStore.activeGroup.count == 1)
+        let answers = Dictionary(uniqueKeysWithValues: parsed.questions.enumerated().map { ($0.element.question, $0.offset == 0 ? exact : "Answer \($0.offset)") })
+        let output = try parsed.approvedOutput(answers: answers)
+        let returned = (output["hookSpecificOutput"] as! [String: Any])["updatedInput"] as! [String: Any]
+        precondition(returned["answers"] as! [String: String] == answers && returned["unknown"] as? String == "preserve")
+        for invalid in [[:], [parsed.question: exact], answers.merging(["Foreign question": "Wrong"], uniquingKeysWith: { $1 }),
+                        answers.merging([parsed.question: " "], uniquingKeysWith: { $1 }),
+                        answers.merging([parsed.question: String(repeating: "x", count: 8_193)], uniquingKeysWith: { $1 })] {
+            do { _ = try parsed.approvedOutput(answers: invalid); preconditionFailure("Partial or invalid answer set accepted") } catch { }
+        }
+        do { _ = try parsed.approvedOutput(answer: "Partial"); preconditionFailure("Legacy partial answer accepted for batch") } catch { }
+        for mode in 0..<4 {
+            var value = payload("invalid", "invalid")
+            var input = value["tool_input"] as! [String: Any]
+            var questions = input["questions"] as! [[String: Any]]
+            if mode == 0 { questions[1]["question"] = questions[0]["question"] }
+            if mode == 1 { questions[0]["multiSelect"] = 0 }
+            if mode == 2 { questions.append(questions[0]) }
+            if mode == 3 { questions[0]["options"] = [["label": "First", "description": "One"], ["label": "First", "description": "Duplicate"]] }
+            input["questions"] = questions; value["tool_input"] = input
+            do { _ = try QuestionRequest.parse(JSONSerialization.data(withJSONObject: value)); preconditionFailure("Invalid question set accepted") } catch { }
+        }
+        try store.ingest(batch)
+        precondition(store.activeGroup.count == 4 && store.activeRequestID == batch.id && store.questionNotice?.count == 4)
+        let ids = store.activeGroup.map(\.id)
+        store.setDraft(exact); store.setComposer("Explain this question")
+        store.applyDraftResponse(try DraftResponse.parse(#"{"kind":"clarification","text":"First question discussion only"}"#), sessionID: "batch-session", requestID: ids[0])
+        store.prepare(.discuss)
+        precondition(store.preview != nil)
+        store.moveQuestion(1)
+        precondition(store.preview == nil && store.activeRequest?.draft == "" && store.activeRequest?.composer == "")
+        precondition(store.discussionMessages(for: store.activeRequest!).isEmpty)
+        store.requestModel(.suggest)
+        precondition(store.preview == nil, "Another page's discussion cannot authorize a suggestion on this empty page")
+        let choices = store.activeRequest!.options
+        store.choose(choices[0]); store.choose(choices[2])
+        precondition(store.activeRequest?.draft == "First, Third")
+        store.choose(choices[0]); precondition(store.activeRequest?.draft == "Third")
+        store.setDraft("Third, plus a custom Other answer")
+        precondition(store.activeRequest?.selectedOptions == nil)
+        store.setComposer("Discuss the second page")
+        store.prepare(.discuss)
+        precondition(store.preview?.text.contains("First question discussion only") == false)
+        store.moveQuestion(1); store.setDraft("Third answer")
+        store.moveQuestion(1); store.setDraft("Fourth answer")
+        precondition(store.allAnswersReady && !store.canSubmit)
+        store.submit()
+        precondition(!FileManager.default.fileExists(atPath: HookFiles.file(batch.id, "decision.json").path), "Next/navigation must never send partial answers")
+        store.beginAnswerReview(); precondition(store.canSubmit)
+        store.selectRequest(ids[0]); precondition(!store.canSubmit && store.activeRequest?.draft == exact)
+        precondition(store.activeRequest?.composer == "Explain this question")
+        store.setDraft(String(repeating: "x", count: 8_193)); precondition(!store.canReviewAnswers)
+        store.setDraft(exact); store.beginAnswerReview(); store.submit()
+        let decision = try LocalStorage.read(HookDecision.self, at: HookFiles.file(batch.id, "decision.json"), limit: HookDecision.maxBytes)
+        precondition(decision.id == batch.id && decision.answer == nil && decision.answers?.count == 4)
+        precondition(decision.answers?[parsed.question] == exact)
+        precondition(store.activeGroup.allSatisfy { $0.status == .sending && $0.submittedAnswer == $0.draft })
+        store.setDraft("Cannot replace an answer in transit"); precondition(store.activeRequest?.draft == exact)
+        try LocalStorage.write(HookReceipt(id: batch.id, submitted: true), to: HookFiles.file(batch.id, "receipt.json"))
+        store.poll(); precondition(store.activeGroup.allSatisfy { $0.status == .submitted })
+        // A new set must notify without replacing an editor, even after an earlier submission.
+        store.editorFocused = true
+        let next = try incoming("batch-session", "next-batch")
+        try store.ingest(next)
+        precondition(store.activeRequestID == ids[0] && store.questionNotice?.id == next.id)
+        store.showNewQuestions()
+        precondition(store.activeRequestID == next.id && store.activeGroup.count == 4 && store.questionNotice == nil)
+        store.setDraft("Saved across restart"); store.moveQuestion(1); store.setDraft("Another saved page")
+        let cancelledID = store.activeRequest!.bridgeID
+        store.cancel()
+        let cancelled = try LocalStorage.read(HookDecision.self, at: HookFiles.file(cancelledID, "decision.json"))
+        precondition(cancelled.answer == nil && cancelled.answers == nil && store.activeGroup.allSatisfy { $0.status == .cancelled })
+        store.editorFocused = false
+        let restoredBatch = try incoming("batch-session", "restored-batch")
+        try store.ingest(restoredBatch)
+        store.setDraft(exact); store.moveQuestion(1); store.setDraft("Second restored draft")
+        store.stop()
+        precondition(store.questionNotice == nil, "Stopped/expired sets must not retain a new-question notice")
+        let restored = SessionStore(connection: connection)
+        restored.selectSession("batch-session")
+        precondition(restored.activeGroup.count == 4 && restored.activeGroup.allSatisfy { $0.status == .inactive })
+        precondition(restored.activeGroup[0].draft == exact && restored.activeGroup[1].draft == "Second restored draft")
+        precondition(!restored.canSubmit)
+        print("Question-set checks passed: four questions, exact complete answers, multi-select/custom text, per-page drafts/discussion, review gate, notices, cancellation and inactive restoration.")
+    }
+
+    @MainActor static func checkQuestionTaskRouting() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("maie-page-task-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try LocalStorage.directory(root)
+        let connection = OpenAIConnection(loadSaved: false)
+        connection.billing = "OpenAI API · separate billing"
+        connection.models = [ModelChoice(id: "test-model", name: "Test")]; connection.selectedModel = "test-model"
+        let firstID = UUID(), secondID = UUID()
+        var first = SavedRequest(id: firstID, toolUseID: "batch", cwd: "/tmp/fictional-project", transcriptPath: nil,
+            question: "First page?", options: [], created: Date(), expiresAt: .distantPast)
+        first.groupID = firstID; first.questionIndex = 0; first.questionCount = 2; first.status = .inactive; first.draft = "First intent"
+        var second = SavedRequest(id: secondID, toolUseID: "batch", cwd: "/tmp/fictional-project", transcriptPath: nil,
+            question: "Second page?", options: [], created: Date(), expiresAt: .distantPast)
+        second.groupID = firstID; second.questionIndex = 1; second.questionCount = 2; second.status = .inactive; second.draft = "Second intent"
+        let history = root.appendingPathComponent("history.json")
+        try LocalStorage.write([SavedSession(id: "batch", requests: [first, second])], to: history)
+        var continuation: CheckedContinuation<String, Never>?
+        let store = SessionStore(connection: connection, historyURL: history, modelResponder: { _ in
+            await withCheckedContinuation { continuation = $0 }
+        })
+        store.requestModel(.suggest); store.sendPreview()
+        for _ in 0..<10_000 where continuation == nil { await Task.yield() }
+        precondition(continuation != nil && store.isThinking(firstID))
+        store.moveQuestion(1)
+        precondition(store.activeRequestID == secondID && !store.isThinking(secondID))
+        continuation!.resume(returning: #"{"kind":"proposal","text":"Proposal for the first page"}"#)
+        for _ in 0..<10_000 where !store.busySessionIDs.isEmpty { await Task.yield() }
+        precondition(store.activeRequest?.proposal == nil && store.activeRequest?.draft == "Second intent")
+        store.moveQuestion(-1)
+        precondition(store.activeRequest?.proposal == "Proposal for the first page" && store.activeRequest?.draft == "First intent")
+        store.acceptProposal()
+        precondition(store.activeRequest?.draft == "Proposal for the first page")
+        store.moveQuestion(1); precondition(store.activeRequest?.draft == "Second intent")
+        print("Question task routing passed: a late proposal stays with its original page until explicitly accepted.")
+    }
+
     @MainActor static func checkRefreshLifecycle() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("maie-refresh-checks-" + UUID().uuidString)
         let previousRoot = ProcessInfo.processInfo.environment["MAIE_DATA_DIR"]

@@ -46,12 +46,37 @@ parameterized helper conflicts without settings changes. Related task ownership
 checks ensure a deleted session's old cancellation cannot clear a replacement
 request or disable Stop. These use synthetic credentials and transport only.
 
+## Question-set update
+
+The question-set, new-question presentation and simplified Connection changes
+follow the initial source release review. New offline checks cover one to four
+questions, an omitted/default or strict-boolean multiSelect, exact complete
+answer sets, duplicate-key rejection, multi-select/custom text, isolated page
+drafts/discussions, late proposal routing to its original page, final-review
+submission, whole-set cancellation and inactive restoration. Process checks
+exercise simultaneous four-question calls, preserved original inputs, decisions
+larger than the previous 32 KiB packet limit, receipts and partial-set rejection.
+
+The preceding user-operated cross-project Desktop evaluation verified a real
+question from another repository, discussion, clarification, proposal acceptance
+and displayed Claude receipt. That evaluation preceded the question-set update.
+A subsequent user-operated Desktop call containing four questions passed on
+October 17: Question 1 of 4 and Question 2 of 4 opened at their question/options;
+a discussion on the first page stayed separate from the empty second page;
+multi-select, a custom-text answer and the complete four-answer review worked.
+Claude's displayed received JSON matched all four reviewed answers exactly.
+The user also inspected and approved the simplified Connection layout. No new
+sign-in or historical host matrix was repeated. Detailed notification timing,
+keyboard focus during concurrent work and reduced-motion behavior remain live
+validation limits. No new independent source/security review of this update is
+claimed.
+
 ## Pending or limited
 
 - Fresh-account/clean-Mac OAuth, refresh expiry, revocation failures and optional
   paid API-key inference have not been fully evaluated live.
 - Full 30-minute host waits and every host/plugin combination are unverified.
-- Cloud/SSH, multiple-choice questions, Windows/Linux and parent/child session
+- Cloud/SSH, Windows/Linux and parent/child session
   discovery are unsupported.
 - The UI displays model replies as plain text; Markdown tables and formatting
   can appear literally. Provider behavior and model response quality can vary.
