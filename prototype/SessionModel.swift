@@ -45,8 +45,11 @@ struct SavedRequest: Identifiable, Codable {
     var questionCount: Int? = nil
     var multiSelect: Bool? = nil
     var selectedOptions: [String]? = nil
+    // Typed text set aside when an option replaced it; restored on request or when the last option is deselected.
+    var retainedDraft: String? = nil
     var bridgeID: UUID { groupID ?? id }
     var allowsMultiple: Bool { multiSelect == true }
+    var canRestoreDraft: Bool { retainedDraft != nil && selectedOptions.map { $0.joined(separator: ", ") == draft } == true }
     var hasAnswer: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && draft.utf8.count <= 8_192 }
 }
 struct SavedSession: Identifiable, Codable {
@@ -145,14 +148,20 @@ struct QuestionNotice: Identifiable, Equatable {
         guard let request = activeRequest else { return [] }
         return activeSession?.requests.filter { $0.bridgeID == request.bridgeID } ?? []
     }
+    // One label everywhere: the project name, numbered only among sessions sharing it.
+    func sessionLabel(_ session: SavedSession) -> String {
+        let matching = sessions.filter { $0.title == session.title }
+        guard matching.count > 1, let index = matching.firstIndex(where: { $0.id == session.id }) else { return session.title }
+        return "\(session.title) · Session \(index + 1)"
+    }
     var pendingQuestions: [QuestionNotice] {
-        sessions.enumerated().flatMap { index, session in
+        sessions.flatMap { session in
             var seen = Set<UUID>()
             return session.requests.compactMap { request -> QuestionNotice? in
                 guard request.status == .waiting, seen.insert(request.bridgeID).inserted,
                       isLive(request.id) else { return nil }
                 return QuestionNotice(id: request.bridgeID, sessionID: session.id,
-                    title: "\(session.title) · Session \(index + 1)", count: request.questionCount ?? 1)
+                    title: sessionLabel(session), count: request.questionCount ?? 1)
             }
         }
     }
@@ -289,7 +298,7 @@ struct QuestionNotice: Identifiable, Equatable {
     func selectRequest(_ id: UUID) { guard activeSession?.requests.contains(where: { $0.id == id }) == true else { return }; activeRequestID = id; preview = nil; reviewingGroupID = nil }
     func setDraft(_ value: String) {
         guard let request = activeRequest, request.status != .submitted && request.status != .sending else { return }
-        updateRequest { $0.draft = value; $0.selectedOptions = nil }; preview = nil; reviewingGroupID = nil
+        updateRequest { $0.draft = value; $0.selectedOptions = nil; $0.retainedDraft = nil }; preview = nil; reviewingGroupID = nil
     }
     func setComposer(_ value: String) { updateRequest { $0.composer = value }; preview = nil }
     func choose(_ option: MaieOption) {
@@ -298,7 +307,19 @@ struct QuestionNotice: Identifiable, Equatable {
         if selected.contains(option.title) { selected.removeAll { $0 == option.title } }
         else { selected.append(option.title) }
         let ordered = request.options.map(\.title).filter { selected.contains($0) }
-        updateRequest { $0.selectedOptions = ordered; $0.draft = ordered.joined(separator: ", ") }
+        let optionText = request.selectedOptions?.joined(separator: ", ")
+        let typed = request.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || request.draft == optionText ? nil : request.draft
+        let retained = typed ?? request.retainedDraft
+        updateRequest {
+            if ordered.isEmpty, let retained { $0.draft = retained; $0.selectedOptions = nil; $0.retainedDraft = nil }
+            else { $0.selectedOptions = ordered; $0.draft = ordered.joined(separator: ", "); $0.retainedDraft = retained }
+        }
+        preview = nil; reviewingGroupID = nil
+    }
+    func restoreRetainedDraft() {
+        guard let request = activeRequest, request.status != .submitted && request.status != .sending,
+              request.canRestoreDraft, let retained = request.retainedDraft else { return }
+        updateRequest { $0.draft = retained; $0.selectedOptions = nil; $0.retainedDraft = nil }
         preview = nil; reviewingGroupID = nil
     }
     func acceptProposal() { guard let proposal = activeRequest?.proposal else { return }; setDraft(proposal); updateRequest { $0.proposal = nil } }
@@ -483,6 +504,8 @@ struct DraftResponse: Decodable {
     let text: String
     static let instruction = """
     Return a structured object with kind and text. Use kind=proposal only for a usable final answer to Claude grounded in the human's expressed intent. Use kind=clarification when you need to ask the human a question or lack enough intent for the current Claude question. Clarification text belongs in discussion, never in the proposed-answer editor. Preserve the human's language. Do not include Markdown fences or describe the JSON format in text.
+
+    \(DiscussionGuidance.refine)
     """
     static var outputFormat: [String: Any] {
         ["format": ["type": "json_schema", "name": "maie_draft_response", "strict": true,
@@ -648,4 +671,12 @@ extension SessionStore {
         updateRequest(requestID) { $0.proposal = response.kind == .proposal ? response.text : nil }
     }
     func stopResponse() { modelTasks[activeSessionID]?.task.cancel() }
+}
+
+enum WindowZoom {
+    /// Clamps the frame macOS proposes for Zoom to the window's maxSize, keeping the proposed left and top edges.
+    static func standardFrame(proposed: NSRect, maxSize: NSSize) -> NSRect {
+        let size = NSSize(width: min(proposed.width, maxSize.width), height: min(proposed.height, maxSize.height))
+        return NSRect(x: proposed.minX, y: proposed.maxY - size.height, width: size.width, height: size.height)
+    }
 }

@@ -24,18 +24,49 @@ private struct ConversationEnd: NSViewRepresentable {
         var animateScroll = false
         private var needsScroll = false
         private var scrollScheduled = false
+        /// Text layout can grow a reply or proposal after the first scroll; keep its end in view
+        /// until the person scrolls elsewhere or another question is shown.
+        private var followsBottom = false
+        private var isScrolling = false
+        private var scrolledOrigin: NSPoint?
+        private weak var observedDocument: NSView?
 
         func requestScroll() {
             needsScroll = true
+            followsBottom = !scrollToQuestion
             scheduleScroll()
         }
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
+            observeDocument()
             if window != nil { scheduleScroll() }
         }
         override func layout() {
             super.layout()
+            observeDocument()
             scheduleScroll()
+        }
+        private func observeDocument() {
+            guard let scroll = enclosingScrollView, let document = scroll.documentView, document !== observedDocument else { return }
+            NotificationCenter.default.removeObserver(self)
+            observedDocument = document
+            document.postsFrameChangedNotifications = true
+            scroll.contentView.postsBoundsChangedNotifications = true
+            NotificationCenter.default.addObserver(self, selector: #selector(documentResized),
+                                                   name: NSView.frameDidChangeNotification, object: document)
+            NotificationCenter.default.addObserver(self, selector: #selector(clipMoved),
+                                                   name: NSView.boundsDidChangeNotification, object: scroll.contentView)
+        }
+        @objc private func documentResized() {
+            guard followsBottom else { return }
+            needsScroll = true
+            scheduleScroll()
+        }
+        @objc private func clipMoved() {
+            guard followsBottom, !isScrolling, let scroll = enclosingScrollView, let document = scroll.documentView else { return }
+            let clip = scroll.contentView.bounds
+            let gap = document.isFlipped ? document.bounds.maxY - clip.maxY : clip.minY - document.bounds.minY
+            if clip.origin != scrolledOrigin && gap > 2 { followsBottom = false }
         }
         private func scheduleScroll() {
             guard needsScroll, !scrollScheduled, window != nil else { return }
@@ -55,6 +86,7 @@ private struct ConversationEnd: NSViewRepresentable {
                 let end = document.isFlipped ? max(document.bounds.minY, document.bounds.maxY - clip.bounds.height)
                     : document.bounds.minY
                 let point = NSPoint(x: clip.bounds.minX, y: self.scrollToQuestion ? start : end)
+                self.isScrolling = true
                 if self.animateScroll && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
                     NSAnimationContext.runAnimationGroup { context in
                         context.duration = 0.18
@@ -62,6 +94,8 @@ private struct ConversationEnd: NSViewRepresentable {
                     }
                 } else { clip.scroll(to: point) }
                 scroll.reflectScrolledClipView(clip)
+                self.scrolledOrigin = clip.bounds.origin
+                self.isScrolling = false
             }
         }
     }
@@ -87,6 +121,18 @@ final class PrototypePresentation: ObservableObject {
     @Published var deletionTargetID: String?
     @Published var deletionTargetLabel = ""
     @Published var discussionOpen = true
+    @Published var height = CGFloat.infinity
+}
+
+/// Caps line length in wide windows; narrow windows keep the full width.
+private let readingWidth: CGFloat = 560
+/// Below this window height the composer, draft and action bar tighten so the discussion keeps room.
+private let compactHeight: CGFloat = 640
+
+private extension View {
+    func readingColumn() -> some View {
+        frame(maxWidth: readingWidth, alignment: .leading).padding(.horizontal, 22).frame(maxWidth: .infinity)
+    }
 }
 
 struct PrototypeView: View {
@@ -98,6 +144,7 @@ struct PrototypeView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var presentation = PrototypePresentation()
     @FocusState private var focus: Input?
+    private var compact: Bool { presentation.height < compactHeight }
     private enum Input { case draft, discussion }
     private var ink: Color { Color(nsColor: .labelColor) }
     private var muted: Color { Color(nsColor: .secondaryLabelColor) }
@@ -123,7 +170,7 @@ struct PrototypeView: View {
                     Button { store.dismissQuestionNotice() } label: { Image(systemName: "xmark") }
                         .help("Dismiss notice")
                 }.font(.system(size: 11)).buttonStyle(.plain)
-                    .padding(.horizontal, 22).padding(.vertical, 10).background(accent.opacity(0.07))
+                    .readingColumn().padding(.vertical, 10).background(accent.opacity(0.07))
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
             if let request = store.activeRequest, let session = store.activeSession {
@@ -159,9 +206,10 @@ struct PrototypeView: View {
                     Text("·")
                     Link("Manage usage", destination: URL(string: "https://chatgpt.com/settings/usage")!)
                 }
-            }.font(.system(size: 10)).foregroundStyle(muted).padding(.vertical, 12)
+            }.font(.system(size: 10)).foregroundStyle(muted).padding(.top, compact ? 5 : 12).padding(.bottom, compact ? 7 : 12)
         }
         .foregroundStyle(ink).background(paper).tint(accent)
+        .background(heightReader)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: store.questionNotice?.id)
         .task(id: store.questionNotice?.id) {
             guard let notice = store.questionNotice, notice.id == store.activeRequest?.bridgeID else { return }
@@ -194,6 +242,13 @@ struct PrototypeView: View {
         } message: { Text("Deletes \(presentation.deletionTargetLabel)’s Maie history and drafts, and cancels its pending questions. Claude’s history is kept.") }
     }
 
+    private var heightReader: some View {
+        GeometryReader { proxy in
+            Color.clear.onAppear { presentation.height = proxy.size.height }
+                .onChange(of: proxy.size.height) { presentation.height = $0 }
+        }
+    }
+
     private var header: some View {
         HStack(spacing: 9) {
             Color.clear.frame(width: 64, height: 26).accessibilityHidden(true)
@@ -205,7 +260,7 @@ struct PrototypeView: View {
             Button { presentation.showsConnection.toggle() } label: {
                 Image(systemName: connection.verified ? "person.crop.circle.badge.checkmark" : "person.crop.circle")
                     .font(.system(size: 15)).frame(width: 28, height: 28)
-            }.buttonStyle(.plain).help("Connection and billing")
+            }.buttonStyle(.plain).help("Connection and billing").accessibilityLabel("Connection")
                 .popover(isPresented: $presentation.showsConnection, arrowEdge: .bottom) {
                     ConnectionView(connection: connection).disabled(!store.busySessionIDs.isEmpty)
                 }
@@ -247,14 +302,10 @@ struct PrototypeView: View {
                     }
                 }
             }
-        }.padding(.horizontal, 22).padding(.top, 15).padding(.bottom, 12)
+        }.readingColumn().padding(.top, 15).padding(.bottom, 12)
     }
 
-    private func sessionLabel(_ session: SavedSession) -> String {
-        let matching = store.sessions.filter { $0.title == session.title }
-        guard matching.count > 1, let index = matching.firstIndex(where: { $0.id == session.id }) else { return session.title }
-        return "\(session.title) · Session \(index + 1)"
-    }
+    private func sessionLabel(_ session: SavedSession) -> String { store.sessionLabel(session) }
 
     private func requestDetails(_ request: SavedRequest, session: SavedSession) -> some View {
         ScrollView {
@@ -321,7 +372,7 @@ struct PrototypeView: View {
                             isExpanded: presentation.discussionOpen, isWaiting: request.status == .waiting,
                             revealID: store.questionRevealID))
                             .frame(height: 1).accessibilityHidden(true)
-                    }.padding(.horizontal, 22).padding(.bottom, 16)
+                    }.readingColumn().padding(.bottom, 16)
             }
             if presentation.discussionOpen { composer(request, session: session) }
             draftEditor(request, session: session)
@@ -346,14 +397,14 @@ struct PrototypeView: View {
                         .help("Send this draft to Claude")
                 }
                 // No Return/default shortcut can submit the final answer.
-            }.padding(.horizontal, 22).padding(.top, 12)
+            }.readingColumn().padding(.top, compact ? 8 : 12)
         }
     }
 
     private func primaryAction(_ title: String, enabled: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(enabled ? paper : muted)
-                .padding(.horizontal, 14).padding(.vertical, 11)
+                .padding(.horizontal, 14).padding(.vertical, compact ? 8 : 11)
                 .background(enabled ? accent : ink.opacity(0.055), in: RoundedRectangle(cornerRadius: 11))
         }.buttonStyle(.plain).disabled(!enabled)
     }
@@ -377,13 +428,13 @@ struct PrototypeView: View {
                             Rectangle().fill(line).frame(height: 1).padding(.top, 8)
                         }
                     }
-                }.frame(maxWidth: .infinity, alignment: .leading).padding(22)
+                }.readingColumn().padding(.vertical, 22)
             }
             HStack {
                 Button("Back") { store.endAnswerReview() }.buttonStyle(.plain)
                 Spacer()
                 primaryAction("Send to Claude", enabled: store.canSubmit) { store.submit() }
-            }.font(.system(size: 12)).padding(.horizontal, 22).padding(.top, 12)
+            }.font(.system(size: 12)).readingColumn().padding(.top, 12)
         }
     }
 
@@ -471,31 +522,36 @@ struct PrototypeView: View {
     }
 
     private func composer(_ request: SavedRequest, session: SavedSession) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: compact ? 4 : 7) {
             HStack {
                 modelMenu
                 Spacer()
             }
             HStack(alignment: .bottom, spacing: 8) {
                 TextField("Ask Maie…", text: Binding(get: { store.activeRequest?.composer ?? "" }, set: store.setComposer), axis: .vertical)
-                    .textFieldStyle(.plain).font(.system(size: 13)).lineLimit(1...3).focused($focus, equals: .discussion)
+                    .textFieldStyle(.plain).font(.system(size: 13)).lineLimit(compact ? 1...2 : 1...3).focused($focus, equals: .discussion)
+                    .accessibilityLabel("Ask Maie")
                     .onSubmit { store.requestModel(.discuss) }
                 Button { store.requestModel(.discuss) } label: {
                     Image(systemName: "arrow.up").font(.system(size: 12, weight: .medium)).frame(width: 26, height: 26)
                         .background(accent.opacity(0.1), in: Circle())
                 }.buttonStyle(.plain)
                     .disabled(request.composer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.busySessionIDs.contains(session.id))
-                    .help("Send message")
-            }.padding(11).background(ink.opacity(0.035), in: RoundedRectangle(cornerRadius: 12))
+                    .help("Send message").accessibilityLabel("Send message")
+            }.padding(compact ? 8 : 11).background(ink.opacity(0.035), in: RoundedRectangle(cornerRadius: 12))
                 .overlay(RoundedRectangle(cornerRadius: 12).stroke(line, lineWidth: 1))
-        }.padding(.horizontal, 22).padding(.top, 10).padding(.bottom, 12)
+        }.readingColumn().padding(.top, compact ? 6 : 10).padding(.bottom, compact ? 8 : 12)
             .background(paper)
             .overlay(alignment: .top) { Rectangle().fill(line).frame(height: 1) }
     }
     private func draftEditor(_ request: SavedRequest, session: SavedSession) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: compact ? 5 : 8) {
             HStack {
                 Text("Your answer").font(.system(size: 11, weight: .medium))
+                if request.canRestoreDraft && request.status != .submitted && request.status != .sending {
+                    Button("Restore your text") { store.restoreRetainedDraft() }
+                        .help("Put back the text you typed before choosing an option")
+                }
                 Spacer()
                 Button("Suggest answer") { store.requestModel(.suggest) }
                     .disabled((request.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && store.discussionMessages(for: request).isEmpty) || connection.busy || store.busySessionIDs.contains(session.id))
@@ -503,7 +559,7 @@ struct PrototypeView: View {
             TextEditor(text: Binding(get: { store.activeRequest?.draft ?? "" }, set: store.setDraft))
                 .font(.system(size: 13)).lineSpacing(3).scrollContentBackground(.hidden).focused($focus, equals: .draft)
                 .accessibilityLabel("Editable draft final answer to Claude")
-                .padding(7).frame(height: 88)
+                .padding(compact ? 5 : 7).frame(height: compact ? 48 : 88)
                 .background(ink.opacity(0.025), in: RoundedRectangle(cornerRadius: 12))
                 .overlay(RoundedRectangle(cornerRadius: 12).stroke(line, lineWidth: 1))
                 .disabled(request.status == .submitted || request.status == .sending)
@@ -513,7 +569,7 @@ struct PrototypeView: View {
             } else if request.draft.utf8.count > 8_192 {
                 Text("Draft is too long to send (8 KiB limit).").font(.system(size: 10)).foregroundStyle(.orange)
             }
-        }.padding(.horizontal, 22).padding(.top, 12).padding(.bottom, 10)
+        }.readingColumn().padding(.top, compact ? 8 : 12).padding(.bottom, compact ? 6 : 10)
             .background(accent.opacity(0.025))
             .overlay(alignment: .top) { Rectangle().fill(line).frame(height: 1) }
     }

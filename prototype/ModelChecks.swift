@@ -10,6 +10,9 @@ import Security
         let literal = "<script>alert(1)</script> $(literal)"
         precondition(String(DiscussionGuidance.displayText(literal).characters) == literal)
         try checkQuestionSets()
+        try checkSessionLabels()
+        try checkOptionDraftRetention()
+        checkWindowZoom()
         try await checkQuestionTaskRouting()
         if CommandLine.arguments.contains("--questions-only") { return }
         try await checkRefreshLifecycle()
@@ -81,9 +84,18 @@ import Security
             precondition(discussionPreview.instructions.contains(compiled),
                 "The actual discussion request must include the reviewed skill body")
         }
+        let refineText = try String(contentsOf: skillRoot.appendingPathComponent("refine").appendingPathComponent("SKILL.md"), encoding: .utf8)
+        precondition(DiscussionGuidance.refine == refineText.components(separatedBy: "\n---\n").dropFirst()
+            .joined(separator: "\n---\n").trimmingCharacters(in: .whitespacesAndNewlines),
+            "The compiled refine skill must match its reviewed SKILL.md body exactly")
+        precondition(!discussionPreview.instructions.contains(DiscussionGuidance.refine),
+            "Refinement returns a structured proposal, so it must not enter plain-text discussion")
         do {
             store.prepare(.suggest)
             precondition(store.preview?.instructions.contains(DraftResponse.instruction) == true)
+            precondition(store.preview?.instructions.contains(DiscussionGuidance.refine) == true
+                && store.preview?.text.contains(DiscussionGuidance.refine) == true,
+                "Suggest answer must send, and visibly preview, the reviewed refine guidance")
             precondition(store.preview?.instructions.contains(DiscussionGuidance.instructions) == false,
                 "Teaching guidance must not turn a structured draft action into a lesson")
             precondition(store.activeRequest?.draft == exact && store.activeSession?.messages.isEmpty == true)
@@ -260,6 +272,11 @@ import Security
                 "An explicit action in an approved session must send once without another popup")
             precondition(sendStore.activeRequest?.draft == exact && !sendStore.canSubmit,
                 "Model actions must preserve the draft and never reactivate the old Claude request")
+            if action == .suggest {
+                precondition(sentPreviews.last?.instructions.contains(DiscussionGuidance.refine) == true
+                    && sendStore.activeRequest?.proposal == "Synthetic reviewed answer",
+                    "A refined draft must stay a separate proposal until Use in draft")
+            }
         }
         sendStore.setDraft("")
         let beforeDiscussionSuggestion = sentPreviews.count
@@ -614,6 +631,116 @@ extension ModelChecks {
         precondition(restored.activeGroup[0].draft == exact && restored.activeGroup[1].draft == "Second restored draft")
         precondition(!restored.canSubmit && restored.pendingQuestions.isEmpty)
         print("Question-set checks passed: four questions, exact complete answers, multi-select/custom text, per-page drafts/discussion, review gate, notices, cancellation and inactive restoration.")
+    }
+
+    static func checkWindowZoom() {
+        // A very wide display proposes a full-screen zoom; it must stay within ThinkingPanel's maxSize.
+        let maxSize = NSSize(width: 1200, height: 1600)
+        let wide = NSRect(x: 0, y: 40, width: 3000, height: 1600)
+        let zoomed = WindowZoom.standardFrame(proposed: wide, maxSize: maxSize)
+        precondition(zoomed.width <= 1200 && zoomed.height <= 1600, "Zoom must respect the window maxSize")
+        precondition(zoomed.minX == wide.minX && zoomed.maxY == wide.maxY, "Zoom must keep the proposed left and top edges")
+        let small = NSRect(x: 100, y: 80, width: 900, height: 1000)
+        precondition(WindowZoom.standardFrame(proposed: small, maxSize: maxSize) == small, "A frame within limits must be unchanged")
+        print("Window zoom check passed: a 3000-point zoom is clamped to maxSize and frames within limits are unchanged.")
+    }
+
+    @MainActor static func checkSessionLabels() throws {
+        let previousRoot = ProcessInfo.processInfo.environment["MAIE_DATA_DIR"]
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("maie-session-labels-" + UUID().uuidString)
+        setenv("MAIE_DATA_DIR", root.path, 1)
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            if let previousRoot { setenv("MAIE_DATA_DIR", previousRoot, 1) } else { unsetenv("MAIE_DATA_DIR") }
+        }
+        let store = SessionStore(connection: OpenAIConnection(loadSaved: false), modelResponder: { _ in
+            preconditionFailure("A label check attempted inference")
+        })
+        try store.start(); defer { store.stop() }
+        let runID = try LocalStorage.read(ServiceLease.self, at: HookFiles.lease).runID
+        for (session, cwd) in [("label-a", "/tmp/alpha-project"), ("label-b", "/tmp/beta-project"), ("label-c", "/tmp/alpha-project")] {
+            let id = UUID()
+            try LocalStorage.directory(HookFiles.folder(id))
+            try LocalStorage.write(Date(), to: HookFiles.file(id, "heartbeat.json"))
+            let payload: [String: Any] = ["hook_event_name": "PreToolUse", "tool_name": "AskUserQuestion", "session_id": session,
+                "tool_use_id": "tool-" + session, "cwd": cwd, "tool_input": ["questions": [["question": "Synthetic label question?",
+                    "options": [["label": "First", "description": "One"], ["label": "Second", "description": "Two"]]]]]]
+            try store.ingest(HookEnvelope(id: id, runID: runID, pid: getpid(), created: Date(), timeout: 1_800,
+                payload: try JSONSerialization.data(withJSONObject: payload)))
+        }
+        // The menu-bar list must name each session exactly as the header and Sessions list do.
+        precondition(store.pendingQuestions.map(\.title) == ["alpha-project · Session 1", "beta-project", "alpha-project · Session 2"])
+        precondition(store.pendingQuestions.allSatisfy { notice in
+            store.sessions.first { $0.id == notice.sessionID }.map(store.sessionLabel) == notice.title
+        })
+        print("Session label check passed: the pending menu, header and Sessions list share one label.")
+    }
+
+    @MainActor static func checkOptionDraftRetention() throws {
+        let previousRoot = ProcessInfo.processInfo.environment["MAIE_DATA_DIR"]
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("maie-option-draft-" + UUID().uuidString)
+        setenv("MAIE_DATA_DIR", root.path, 1)
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            if let previousRoot { setenv("MAIE_DATA_DIR", previousRoot, 1) } else { unsetenv("MAIE_DATA_DIR") }
+        }
+        let store = SessionStore(connection: OpenAIConnection(loadSaved: false), modelResponder: { _ in
+            preconditionFailure("An option draft check attempted inference")
+        })
+        try store.start(); defer { store.stop() }
+        let runID = try LocalStorage.read(ServiceLease.self, at: HookFiles.lease).runID
+        let id = UUID()
+        try LocalStorage.directory(HookFiles.folder(id))
+        try LocalStorage.write(Date(), to: HookFiles.file(id, "heartbeat.json"))
+        let options: [[String: Any]] = [["label": "First", "description": "One"], ["label": "Second", "description": "Two"]]
+        let payload: [String: Any] = ["hook_event_name": "PreToolUse", "tool_name": "AskUserQuestion", "session_id": "option-draft",
+            "tool_use_id": "tool-option-draft", "cwd": "/tmp/fictional-project", "tool_input": ["questions": [
+                ["question": "Synthetic single question?", "options": options],
+                ["question": "Synthetic multiple question?", "options": options, "multiSelect": true]]]]
+        try store.ingest(HookEnvelope(id: id, runID: runID, pid: getpid(), created: Date(), timeout: 1_800,
+            payload: try JSONSerialization.data(withJSONObject: payload)))
+        let requests = store.sessions.first { $0.id == "option-draft" }!.requests
+        precondition(requests.count == 2 && requests[1].allowsMultiple)
+        let first = MaieOption(title: "First", detail: "One"), second = MaieOption(title: "Second", detail: "Two")
+        // Greek "My own answer" with an accented character, typed before any option is chosen.
+        let typed = "\u{0397} \u{03B4}\u{03B9}\u{03BA}\u{03AE} \u{03BC}\u{03BF}\u{03C5} \u{03B1}\u{03C0}\u{03AC}\u{03BD}\u{03C4}\u{03B7}\u{03C3}\u{03B7}"
+
+        // Single select: choosing over typed text keeps it aside; restore returns it exactly.
+        store.selectRequest(requests[0].id)
+        store.choose(first)
+        precondition(store.activeRequest?.draft == "First" && store.activeRequest?.retainedDraft == nil, "An empty draft must not be retained")
+        store.setDraft(typed)
+        store.choose(first)
+        precondition(store.activeRequest?.draft == "First" && store.activeRequest?.retainedDraft == typed)
+        precondition(store.activeRequest?.canRestoreDraft == true)
+        store.choose(second)
+        precondition(store.activeRequest?.draft == "Second" && store.activeRequest?.retainedDraft == typed, "Switching options must keep the typed text")
+        store.restoreRetainedDraft()
+        precondition(store.activeRequest?.draft == typed && store.activeRequest?.selectedOptions == nil && store.activeRequest?.retainedDraft == nil)
+        // Typing after choosing is a deliberate edit and drops the retained text.
+        store.choose(first)
+        store.setDraft("First, edited")
+        precondition(store.activeRequest?.retainedDraft == nil && store.activeRequest?.selectedOptions == nil)
+        precondition(store.activeRequest?.canRestoreDraft == false)
+
+        // Multiple select: deselecting the last option brings the typed text back.
+        store.selectRequest(requests[1].id)
+        store.setDraft(typed)
+        store.choose(second); store.choose(first)
+        precondition(store.activeRequest?.draft == "First, Second" && store.activeRequest?.retainedDraft == typed)
+        store.choose(first); store.choose(second)
+        precondition(store.activeRequest?.draft == typed && store.activeRequest?.selectedOptions == nil && store.activeRequest?.retainedDraft == nil)
+        // Without typed text, deselecting everything still leaves an empty draft.
+        store.setDraft("")
+        store.choose(first); store.choose(first)
+        precondition(store.activeRequest?.draft == "" && store.activeRequest?.selectedOptions == [] && store.activeRequest?.retainedDraft == nil)
+
+        // History saved before this field existed must still decode.
+        var object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(requests[0])) as! [String: Any]
+        object.removeValue(forKey: "retainedDraft")
+        let decoded = try JSONDecoder().decode(SavedRequest.self, from: JSONSerialization.data(withJSONObject: object))
+        precondition(decoded.retainedDraft == nil && !decoded.canRestoreDraft)
+        print("Option draft check passed: choosing an option keeps typed text aside, restore and deselect-all bring it back, typing drops it.")
     }
 
     @MainActor static func checkQuestionTaskRouting() async throws {

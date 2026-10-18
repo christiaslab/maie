@@ -17,7 +17,9 @@ The run script builds only if the app is missing. After rebuilding, choose the
 menu bar leaf → **Quit Maie**, then reopen.
 
 The window moves, resizes, follows system appearance and remembers placement.
-The minus button hides it. Hiding does not cancel requests or pause deadlines.
+Close or ⌘W hides it; minimize and zoom are standard. Hiding does not cancel
+requests or pause deadlines. Discuss grows a smaller window to 780 points;
+Collapse undoes only that growth, keeping a size you chose.
 **⌘J** focuses discussion. Return in Your answer inserts a newline; final
 submission has no default keyboard shortcut.
 
@@ -89,7 +91,7 @@ of the discussion. Manual scrolling remains available. A small new-question
 notice offers Show when another session or editor is in use. Hidden Maie stays
 hidden; a dot beside the menu-bar leaf indicates pending question sets. Its menu
 lists each live set for explicit opening. Dismissing a notice keeps that set in
-the menu; expiry or cancellation removes it. Arrivals do not activate the panel,
+the menu; expiry or cancellation removes it. Arrivals do not activate the window,
 and reduced-motion preferences are respected.
 
 The first model action per Claude session per app run shows a confirmation of
@@ -155,11 +157,12 @@ use the same value. Normal launch does not set it.
 
 This source preview has no Developer ID/notarized installer, multi-provider
 routing, Cloud/SSH support, personal learning memory or
-automatic parent/child discovery. Plain-text model replies can show literal
-Markdown. See [validation](../docs/VALIDATION.md) and [security](../SECURITY.md).
+automatic parent/child discovery. Model replies get inline Markdown styling;
+lists, headings and tables can still appear literally. Drafts and proposals
+stay plain text. See [validation](../docs/VALIDATION.md) and [security](../SECURITY.md).
 
 Discussion guidance adapts Matt Pocock's wait-what/teach skills. Sources and the
 upstream MIT notice are in [Third-party notices](../THIRD-PARTY-NOTICES.md).
-The two adapted [SKILL.md sources](../skills/README.md) are included in the repo
+The adapted SKILL.md sources and Maie's refine skill ([skills](../skills/README.md)) are included in the repo
 and compiled into the app at build time. Editing them requires a rebuild.
 Maie's own code is [MIT licensed](../LICENSE).

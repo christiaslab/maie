@@ -24,6 +24,7 @@ final class ThinkingPanel: NSWindow {
     private lazy var store = SessionStore(connection: connection)
     private var panel: ThinkingPanel!
     private var statusItem: NSStatusItem!
+    private var discussionGrowth: (from: CGFloat, to: CGFloat)?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -171,7 +172,17 @@ final class ThinkingPanel: NSWindow {
         guard panel != nil else { return }
         let bounds = (panel.screen ?? NSScreen.main)?.visibleFrame ?? panel.frame
         var frame = panel.frame
-        let height = min(expanded ? 780.0 : 600.0, bounds.height - 24)
+        let height: CGFloat
+        if expanded {
+            // Grow a compact window for discussion; never shrink a size the person chose.
+            let target = min(780.0, bounds.height - 24)
+            guard frame.height < target else { discussionGrowth = nil; return }
+            discussionGrowth = (frame.height, target); height = target
+        } else {
+            // Undo only Maie's own growth, and only if the window was not resized since.
+            guard let growth = discussionGrowth, abs(frame.height - growth.to) < 1 else { discussionGrowth = nil; return }
+            discussionGrowth = nil; height = growth.from
+        }
         frame.origin.y += frame.height - height
         frame.size.height = height
         frame.origin.y = min(max(frame.origin.y, bounds.minY + 12), bounds.maxY - height - 12)
@@ -190,6 +201,9 @@ final class ThinkingPanel: NSWindow {
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool { hide(); return false }
+    func windowWillUseStandardFrame(_ window: NSWindow, defaultFrame newFrame: NSRect) -> NSRect {
+        WindowZoom.standardFrame(proposed: newFrame, maxSize: window.maxSize)
+    }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         show(); return true

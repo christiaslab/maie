@@ -32,7 +32,7 @@ Another host hook can still block a returned answer.
 
 ## Source map
 
-- prototype/PrototypeApp.swift: app lifecycle, panel and menu bar.
+- prototype/PrototypeApp.swift: app lifecycle, window and menu bar.
 - prototype/PrototypeView.swift: discussion, draft and explicit controls.
 - prototype/SessionModel.swift: per-session state, context, model snapshots,
   proposal/clarification routing and final submission.
@@ -41,6 +41,8 @@ Another host hook can still block a returned answer.
 - skills/wait-what/SKILL.md and skills/teach/SKILL.md: reviewed explanation and
   teaching guidance. prototype/generate-guidance.py compiles their bodies to
   literal Swift strings during build; metadata is not sent to the model.
+- skills/refine/SKILL.md: draft refinement rules, compiled the same way and sent
+  only with Suggest answer's structured proposal/clarification request.
 - prototype/DiscussionGuidance.swift: discussion routing around those skill bodies.
 - prototype/HookTransport.swift and HookMain.swift: local helper transport.
 - prototype/LocalStorage.swift: bounded persistence and Keychain storage.
@@ -94,7 +96,7 @@ Incoming questions publish a small notice. An existing waiting editor, model
 response or another active session keeps its selection; Show explicitly opens
 the new set. Automatically selected questions and page navigation scroll to the
 question, while discussion changes scroll to the conversation end. Arrivals do
-not order the panel forward or activate the app. A menu-bar dot marks live waiting
+not order the window forward or activate the app. A menu-bar dot marks live waiting
 sets, and the menu lists each set separately. Opening a menu target rechecks its
 session/request identity and liveness; notice dismissal leaves pending sets
 available. Sending, cancellation and expiry remove sets from this list. Motion

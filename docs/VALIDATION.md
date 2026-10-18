@@ -119,3 +119,25 @@ owner evaluation of this final native header remain pending.
 
 The rounded-outline follow-up was inspected in the synthetic preview; the full
 offline build passed again.
+
+## October 18 isolated UI validation and fixes
+
+An isolated harness compiled the real app sources with a temporary
+MAIE_DATA_DIR, a throwaway preferences suite, in-memory synthetic credentials,
+a stubbed network and scripted model replies. The real hook helper received a
+synthetic AskUserQuestion payload. No real model, credentials, Keychain entries
+or Claude settings were used. It drove native AppKit events and passed 28 checks
+in dark and light appearance: visible/enabled native controls, quiet arrival,
+menu opening, status dot, first-send confirmation, Use in draft, a second arrival
+not stealing the editor, cancellation, minimize/restore, close and Cmd-W hiding
+with the request live, zoom, and a helper receipt equal to the exact draft.
+
+Fixes from this pass: Discuss/Collapse no longer override a size the person
+chose; the pending menu, header and Sessions list share one session label (new
+offline regression); the send arrow, Connection button and Ask Maie field have
+accessible labels. The complete offline build passed afterwards.
+
+Not covered: the bundled app itself (the harness reuses its sources), real
+pointer interaction, reduced motion, live notice dismissal timing, live Claude
+Code and live model calls. The proposal box was intermittently clipped behind
+the composer after appearing; this is recorded for follow-up.

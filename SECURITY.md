@@ -17,7 +17,7 @@ supported version. Review changes before building or enabling its hook.
   Model/effort are visible; API billing never activates as a fallback.
 - Questions, transcripts and model replies are untrusted text. Maie offers no
   model tools, command execution or active web rendering.
-- The two reviewed skills are compiled from fixed repo paths during build.
+- The three reviewed skills are compiled from fixed repo paths during build.
   Their bodies are escaped as literal strings, with no runtime skill execution
   or loading of external agent configuration.
 - The helper binds decisions to the originating session/request, validates the

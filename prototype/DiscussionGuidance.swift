@@ -15,6 +15,8 @@ enum DiscussionGuidance {
 
     static let explain = DiscussionSkills.explain
     static let teach = DiscussionSkills.teach
+    // Draft refinement belongs to the structured Suggest answer request, not discussion.
+    static let refine = DiscussionSkills.refine
 
     static let instructions = """
     DISCUSSION GUIDANCE

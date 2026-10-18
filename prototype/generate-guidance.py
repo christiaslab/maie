@@ -1,11 +1,11 @@
-"""Compile the two repo-owned skill bodies into literal Swift strings."""
+"""Compile the three repo-owned skill bodies into literal Swift strings."""
 import argparse
 from pathlib import Path
 import re
 import tempfile
 
 ROOT = Path(__file__).resolve().parent.parent
-SKILLS = (("wait-what", "explain"), ("teach", "teach"))
+SKILLS = (("wait-what", "explain"), ("teach", "teach"), ("refine", "refine"))
 
 
 def load_skill(path, name):
@@ -78,7 +78,7 @@ def main():
         generate(ROOT, args.output)
     except (OSError, ValueError) as error:
         parser.exit(1, f"Skill build stopped: {error}\n")
-    print("Compiled the wait-what and teach skill bodies.")
+    print("Compiled the wait-what, teach and refine skill bodies.")
 
 
 if __name__ == "__main__":
