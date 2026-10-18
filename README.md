@@ -5,6 +5,10 @@
 A small macOS companion for thinking through questions from Claude Code.
 Discuss the choices, ask for an explanation, and send your own answer back.
 
+The name Maie draws on Socratic maieutics: helping someone bring their own
+thinking into words through questions and dialogue. You work through the
+choices, and the final answer remains yours.
+
 Maie keeps the conversation and final answer separate. **Suggest answer** offers
 wording based on your discussion and draft; **Use in draft** accepts it.
 Only **Send to Claude** submits the final answer. A set of up to four questions
@@ -24,6 +28,9 @@ Code installation with AskUserQuestion hooks and onFailure=block support
 sh prototype/build.sh
 sh prototype/run.sh
 ```
+
+After building, you can also open `prototype/.build/Maie Prototype.app` directly
+in Finder. The terminal is not required for everyday launch.
 
 1. Open **Connection**, choose **Continue with ChatGPT**, then complete sign-in.
 2. Choose an available model and thinking time, then use
@@ -59,7 +66,8 @@ Maie. The app must remain open while a question is waiting.
   Old questions remain inactive after a restart; ask Claude for a new question.
 - New questions appear with a small notice and a view of the question. While
   editing or viewing another session, **Show** opens the new question when ready.
-  The panel appears without taking keyboard focus from your other app.
+  Hidden Maie stays hidden: the menu-bar leaf shows a dot while questions are
+  pending. Open its menu to choose a question set. Arrivals do not activate Maie.
 - **Sessions** holds separate discussions and lets you delete local history.
 
 ChatGPT sign-in uses Maie's own registration. An optional OpenAI API key requires

@@ -93,7 +93,10 @@ this prototype's implementation.
 Incoming questions publish a small notice. An existing waiting editor, model
 response or another active session keeps its selection; Show explicitly opens
 the new set. Automatically selected questions and page navigation scroll to the
-question, while discussion changes scroll to the conversation end. The panel
-orders forward without activating the app or taking keyboard focus. Motion
+question, while discussion changes scroll to the conversation end. Arrivals do
+not order the panel forward or activate the app. A menu-bar dot marks live waiting
+sets, and the menu lists each set separately. Opening a menu target rechecks its
+session/request identity and liveness; notice dismissal leaves pending sets
+available. Sending, cancellation and expiry remove sets from this list. Motion
 respects the system reduced-motion preference. Notices and review state are
 presentation state, not persisted approvals or automatic model requests.

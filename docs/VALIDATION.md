@@ -1,6 +1,6 @@
 # Prototype validation
 
-Updated October 17, 2026. This summary omits private paths, account information,
+Updated October 18, 2026. This summary omits private paths, account information,
 conversation content and live session identifiers.
 
 ## Completed checks
@@ -83,3 +83,13 @@ claimed.
 
 Offline checks do not call OpenAI or Claude, inspect real credentials or operate
 the GUI. Live tests consume the connected account's normal usage.
+
+## Quiet menu-bar arrival update
+
+Focused synthetic checks cover pending-set counts across sessions, preserved
+selection/draft, notice dismissal, mismatched session targets, stale heartbeat
+targets, cancellation and inactive restoration. The offline build and app/helper
+checks passed again on October 18. The restricted sandbox could not create the
+temporary synthetic RSA key; the complete build passed outside that sandbox,
+without real credentials or model calls. Hidden-panel visibility, menu interaction, keyboard focus during
+concurrent typing and reduced motion still require user-operated validation.

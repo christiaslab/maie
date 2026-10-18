@@ -126,7 +126,7 @@ struct QuestionNotice: Identifiable, Equatable {
     @Published private(set) var reviewingGroupID: UUID?
     var editorFocused = false
     let connection: OpenAIConnection
-    var onQuestion: (() -> Void)?
+    var onPendingQuestionsChange: (() -> Void)?
     private let runID = UUID()
     private var live: [UUID: (envelope: HookEnvelope, deadline: ContinuousClock.Instant)] = [:]
     private var consumed = Set<UUID>()
@@ -144,6 +144,24 @@ struct QuestionNotice: Identifiable, Equatable {
     var activeGroup: [SavedRequest] {
         guard let request = activeRequest else { return [] }
         return activeSession?.requests.filter { $0.bridgeID == request.bridgeID } ?? []
+    }
+    var pendingQuestions: [QuestionNotice] {
+        sessions.enumerated().flatMap { index, session in
+            var seen = Set<UUID>()
+            return session.requests.compactMap { request -> QuestionNotice? in
+                guard request.status == .waiting, seen.insert(request.bridgeID).inserted,
+                      isLive(request.id) else { return nil }
+                return QuestionNotice(id: request.bridgeID, sessionID: session.id,
+                    title: "\(session.title) · Session \(index + 1)", count: request.questionCount ?? 1)
+            }
+        }
+    }
+    @discardableResult func showPendingQuestion(_ target: QuestionNotice) -> Bool {
+        guard pendingQuestions.contains(where: { $0.id == target.id && $0.sessionID == target.sessionID }) else { return false }
+        selectSession(target.sessionID); selectRequest(target.id)
+        questionRevealID = UUID()
+        if questionNotice?.id == target.id { questionNotice = nil }
+        return true
     }
     var allAnswersReady: Bool {
         guard let request = activeRequest, isLive(request.id), !activeGroup.isEmpty else { return false }
@@ -170,8 +188,7 @@ struct QuestionNotice: Identifiable, Equatable {
     func dismissQuestionNotice() { questionNotice = nil }
     func showNewQuestions() {
         guard let notice = questionNotice else { return }
-        selectSession(notice.sessionID); selectRequest(notice.id)
-        questionRevealID = UUID(); questionNotice = nil
+        if !showPendingQuestion(notice) { questionNotice = nil }
     }
     init(connection: OpenAIConnection, historyURL: URL = LocalStorage.root.appendingPathComponent("sessions.json"),
          modelResponder: (@MainActor (ModelPreview) async throws -> String)? = nil) {
@@ -228,6 +245,7 @@ struct QuestionNotice: Identifiable, Equatable {
         ownsService = false
     }
     private func persist() {
+        defer { onPendingQuestionsChange?() }
         do {
             try LocalStorage.directory(historyURL.deletingLastPathComponent())
             try LocalStorage.write(sessions, to: historyURL, limit: LocalStorage.defaultReadLimit)
@@ -345,7 +363,7 @@ struct QuestionNotice: Identifiable, Equatable {
                 updateRequest(saved.id) { $0.context = slice }
             }
         }
-        persist(); onQuestion?()
+        persist()
     }
     func poll() {
         guard ownsService else { return }

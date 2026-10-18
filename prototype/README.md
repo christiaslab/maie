@@ -86,9 +86,11 @@ time when asked. It cannot browse, run commands or access project files.
 Restored conversations open at the end. New questions and question-page changes
 open at the question/options; sent messages and model responses follow the end
 of the discussion. Manual scrolling remains available. A small new-question
-notice offers Show when another session or editor is in use. The panel can
-appear without taking keyboard focus from the current app; reduced-motion
-preferences are respected.
+notice offers Show when another session or editor is in use. Hidden Maie stays
+hidden; a dot beside the menu-bar leaf indicates pending question sets. Its menu
+lists each live set for explicit opening. Dismissing a notice keeps that set in
+the menu; expiry or cancellation removes it. Arrivals do not activate the panel,
+and reduced-motion preferences are respected.
 
 The first model action per Claude session per app run shows a confirmation of
 connection/data. **View everything sent to OpenAI** expands the exact text.

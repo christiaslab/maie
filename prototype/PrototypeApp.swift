@@ -6,7 +6,7 @@ final class ThinkingPanel: NSPanel {
     override var canBecomeMain: Bool { true }
 }
 
-@MainActor final class PrototypeDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItemValidation {
+@MainActor final class PrototypeDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItemValidation, NSMenuDelegate {
     private let connection = OpenAIConnection()
     private lazy var store = SessionStore(connection: connection)
     private var panel: ThinkingPanel!
@@ -43,11 +43,8 @@ final class ThinkingPanel: NSPanel {
             .clipShape(RoundedRectangle(cornerRadius: 22))
             .overlay(RoundedRectangle(cornerRadius: 22).stroke(Color.primary.opacity(0.10), lineWidth: 1))
         panel.contentView = NSHostingView(rootView: view)
-        store.onQuestion = { [weak self] in
-            // Bring the small panel into view without taking keyboard focus from Claude.
-            self?.keepOnScreen()
-            self?.panel.orderFrontRegardless()
-        }
+        store.onPendingQuestionsChange = { [weak self] in self?.updatePendingIndicator() }
+        updatePendingIndicator()
 
         if !panel.setFrameUsingName("MaiePrototypePanel") {
             let bounds = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
@@ -86,14 +83,42 @@ final class ThinkingPanel: NSPanel {
         main.addItem(editItem)
         NSApp.mainMenu = main
 
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.image = NSImage(systemSymbolName: "leaf", accessibilityDescription: "Maie")
         statusItem.button?.toolTip = "Maie"
         let statusMenu = NSMenu()
-        statusMenu.addItem(item("Show Maie", #selector(show), ""))
-        statusMenu.addItem(.separator())
-        statusMenu.addItem(item("Quit Maie", #selector(quit), "q"))
+        statusMenu.delegate = self
         statusItem.menu = statusMenu
+    }
+
+    private func updatePendingIndicator() {
+        let count = store.pendingQuestions.count
+        let label = count == 0 ? "Waiting for Claude" : "\(count) pending question set\(count == 1 ? "" : "s")"
+        statusItem.button?.title = count == 0 ? "" : " •"
+        statusItem.button?.toolTip = "Maie · " + label
+        statusItem.button?.setAccessibilityLabel("Maie · " + label)
+    }
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+        let pending = store.pendingQuestions
+        let summary = NSMenuItem(title: pending.isEmpty ? "Waiting for Claude" : "\(pending.count) pending question set\(pending.count == 1 ? "" : "s")",
+                                 action: nil, keyEquivalent: "")
+        menu.addItem(summary)
+        for (index, target) in pending.enumerated() {
+            let entry = item("\(index + 1). \(target.title) · \(target.count) question\(target.count == 1 ? "" : "s")", #selector(openPendingQuestion(_:)), "")
+            entry.representedObject = target
+            menu.addItem(entry)
+        }
+        menu.addItem(.separator())
+        menu.addItem(item("Show Maie", #selector(show), ""))
+        menu.addItem(item("Quit Maie", #selector(quit), "q"))
+    }
+
+    @objc private func openPendingQuestion(_ sender: NSMenuItem) {
+        guard let target = sender.representedObject as? QuestionNotice,
+              store.showPendingQuestion(target) else { updatePendingIndicator(); return }
+        show()
     }
 
     private func item(_ title: String, _ action: Selector, _ key: String) -> NSMenuItem {

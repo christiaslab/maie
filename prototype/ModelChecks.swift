@@ -573,13 +573,29 @@ extension ModelChecks {
         let next = try incoming("batch-session", "next-batch")
         try store.ingest(next)
         precondition(store.activeRequestID == ids[0] && store.questionNotice?.id == next.id)
-        store.showNewQuestions()
+        precondition(store.pendingQuestions.count == 1 && store.pendingQuestions[0].count == 4)
+        let target = store.pendingQuestions[0]
+        let other = try incoming("other-session", "other-batch")
+        try store.ingest(other)
+        precondition(store.activeRequestID == ids[0] && store.activeRequest?.draft == exact)
+        precondition(store.pendingQuestions.count == 2, "Count request sets, not their pages")
+        let staleTarget = store.pendingQuestions.first { $0.id == other.id }!
+        store.dismissQuestionNotice()
+        precondition(store.pendingQuestions.count == 2, "Dismissal must not hide pending requests")
+        let foreignTarget = QuestionNotice(id: target.id, sessionID: "other-session", title: "Synthetic", count: 4)
+        precondition(!store.showPendingQuestion(foreignTarget) && store.activeRequestID == ids[0])
+        try FileManager.default.removeItem(at: HookFiles.file(other.id, "heartbeat.json"))
+        precondition(!store.showPendingQuestion(staleTarget) && store.activeRequestID == ids[0], "Stale menu targets cannot navigate")
+        store.poll()
+        precondition(store.pendingQuestions.count == 1)
+        precondition(store.showPendingQuestion(target))
         precondition(store.activeRequestID == next.id && store.activeGroup.count == 4 && store.questionNotice == nil)
         store.setDraft("Saved across restart"); store.moveQuestion(1); store.setDraft("Another saved page")
         let cancelledID = store.activeRequest!.bridgeID
         store.cancel()
         let cancelled = try LocalStorage.read(HookDecision.self, at: HookFiles.file(cancelledID, "decision.json"))
         precondition(cancelled.answer == nil && cancelled.answers == nil && store.activeGroup.allSatisfy { $0.status == .cancelled })
+        precondition(store.pendingQuestions.isEmpty && !store.showPendingQuestion(target))
         store.editorFocused = false
         let restoredBatch = try incoming("batch-session", "restored-batch")
         try store.ingest(restoredBatch)
@@ -590,7 +606,7 @@ extension ModelChecks {
         restored.selectSession("batch-session")
         precondition(restored.activeGroup.count == 4 && restored.activeGroup.allSatisfy { $0.status == .inactive })
         precondition(restored.activeGroup[0].draft == exact && restored.activeGroup[1].draft == "Second restored draft")
-        precondition(!restored.canSubmit)
+        precondition(!restored.canSubmit && restored.pendingQuestions.isEmpty)
         print("Question-set checks passed: four questions, exact complete answers, multi-select/custom text, per-page drafts/discussion, review gate, notices, cancellation and inactive restoration.")
     }
 
