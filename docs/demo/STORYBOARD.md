@@ -7,7 +7,7 @@ and only **Send to Claude** submits it.
 
 ## Status of the current recording
 
-The current clip (`prototype/.build/demo/maie-demo-synthetic.mp4`, 44.3 s,
+The current clip (`prototype/.build/demo/maie-demo-synthetic.mp4`, 44.1 s,
 1920x1080, dark appearance, produced by the gitignored UI harness under
 `prototype/.build/ui-harness/`) is **synthetic** and is labeled as such on
 screen:
@@ -24,11 +24,12 @@ screen:
 On-screen footer label: "Synthetic demo · fictional project · scripted model
 replies · simulated Claude Code".
 
-Music: "First Light Particles" by Yoiyami, CC0 1.0 (public domain, no
-attribution required), from opengameart.org/node/182244. About 44 s of the
-track are mixed under the clip at a low level with a 1.5 s fade in and a 3 s
-fade out. The media and the track stay out of Git; the file, checksum and
-license are recorded in `prototype/.build/demo/music/SOURCE.md`.
+Music: "PYNCHON" by cinameng, CC0 1.0 (public domain, no attribution
+required), from opengameart.org/content/pynchon. The 32.8 s loop is played
+twice with a short crossfade at the seam, mixed low (peak about -19 dBFS) with
+a 1 s fade in and a 3 s fade out. The media and the track stay out of Git; the
+file, checksum and license are recorded in
+`prototype/.build/demo/music/SOURCE.md`.
 
 ## Scenario
 
@@ -50,7 +51,7 @@ sit on the right. The opening and closing scenes are a mock terminal pane
 | Intro (~3 s) | Terminal pane: the AskUserQuestion with its three options and a "waiting…" cursor. | — |
 | 1 · OPEN | Maie opened from the menu-bar leaf; the question, options and empty **Your answer**. | "The question waits in Maie until you open it." |
 | 2 · UNDERSTAND | "Explain the difference briefly." typed in **Ask Maie**; first-send confirmation; the explanation appears while **Your answer** stays empty. | "Ask what the options mean." / "You confirm the first request before it is sent." |
-| 3 · DECIDE | Rough intent typed in **Your answer**; **Suggest answer**; a **Proposed answer** with **Use in draft / Dismiss** while the draft below is unchanged. | "Write your intent, then ask for a suggested answer." / "The suggestion stays separate. Your answer is unchanged." |
+| 3 · DECIDE | Rough intent typed in **Your answer**; **Suggest answer** (the refine skill tightens the draft); a **Proposed answer** with **Use in draft / Dismiss** while the draft below is unchanged. | "Write your intent. Suggest answer tightens it into a proposal." / "The suggestion stays separate. Your answer is unchanged." |
 | 4 · ACCEPT | **Use in draft**; the draft now holds the proposal text. | "Use in draft copies it into your answer." |
 | 5 · EDIT | " Revisit after the beta." appended to the draft. | "Edit the answer in your own words." |
 | 6 · SEND | **Send to Claude**; status shows the answer was sent. | "Only Send to Claude submits it." |
