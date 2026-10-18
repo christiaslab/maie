@@ -101,7 +101,7 @@ available. Sending, cancellation and expiry remove sets from this list. Motion
 respects the system reduced-motion preference. Notices and review state are
 presentation state, not persisted approvals or automatic model requests.
 
-Maie uses a normal-level native window with standard close/minimize/zoom controls
+Maie uses a normal-level native window with integrated close/minimize/zoom controls
 and Dock switching. Closing hides the window without stopping pending requests;
 Quit stops the bridge. Model discussion text uses native inline Markdown styling,
 preserving whitespace and removing link actions. No web view or remote content

@@ -93,6 +93,7 @@ struct PrototypeView: View {
     @ObservedObject var store: SessionStore
     @ObservedObject var connection: OpenAIConnection
     let resize: (Bool) -> Void
+    var automaticallyShowConnection = true
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var presentation = PrototypePresentation()
@@ -167,7 +168,7 @@ struct PrototypeView: View {
             do { try await Task.sleep(nanoseconds: 5_000_000_000) } catch { return }
             if store.questionNotice?.id == notice.id { store.dismissQuestionNotice() }
         }
-        .onAppear { if !connection.isConnected { presentation.showsConnection = true } }
+        .onAppear { if automaticallyShowConnection && !connection.isConnected { presentation.showsConnection = true } }
         .onReceive(NotificationCenter.default.publisher(for: .maieFocusDiscussion)) { _ in
             presentation.discussionOpen = true; focus = .discussion
         }
@@ -195,6 +196,7 @@ struct PrototypeView: View {
 
     private var header: some View {
         HStack(spacing: 9) {
+            Color.clear.frame(width: 64, height: 26).accessibilityHidden(true)
             MaieMark().stroke(accent, style: StrokeStyle(lineWidth: 1.4, lineCap: .round))
                 .frame(width: 22, height: 27).accessibilityHidden(true)
             Text("maie").font(.system(size: 25, design: .serif)).tracking(-0.9)

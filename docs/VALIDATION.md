@@ -109,3 +109,13 @@ paragraphs, emphasis, inert links and literal script-like text. No live model
 calls or real credentials are used by these checks.
 
 The complete build and offline app/helper checks passed after this refinement.
+
+The final unified-header correction uses the original native macOS window
+buttons. An isolated synthetic app rendered the real view at 480x780 and
+720x900; both active-window images were inspected. It checked visible/enabled
+native controls and minimize/restore without starting the bridge or accessing
+real credentials. The complete build passed. Manual pointer interaction and
+owner evaluation of this final native header remain pending.
+
+The rounded-outline follow-up was inspected in the synthetic preview; the full
+offline build passed again.

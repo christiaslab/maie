@@ -2,6 +2,19 @@ import AppKit
 import SwiftUI
 
 final class ThinkingPanel: NSWindow {
+    func configureChrome() {
+        isOpaque = false
+        backgroundColor = .clear
+        titleVisibility = .hidden
+        titlebarAppearsTransparent = true
+        styleMask.insert(.fullSizeContentView)
+        let bar = NSToolbar(identifier: "MaieWindowToolbar")
+        bar.showsBaselineSeparator = false
+        toolbar = bar
+        toolbarStyle = .unified
+
+    }
+
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
 }
@@ -23,6 +36,7 @@ final class ThinkingPanel: NSWindow {
 
         panel = ThinkingPanel(contentRect: NSRect(x: 0, y: 0, width: 430, height: 600),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        panel.configureChrome()
         panel.title = "Maie"
         panel.setAccessibilityLabel("Maie window")
         panel.isReleasedWhenClosed = false
@@ -38,6 +52,8 @@ final class ThinkingPanel: NSWindow {
 
         let view = PrototypeView(store: store, connection: connection,
                                  resize: { [weak self] expanded in self?.resize(expanded: expanded) })
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .ignoresSafeArea(.container, edges: .top)
 
         panel.contentView = NSHostingView(rootView: view)
         store.onPendingQuestionsChange = { [weak self] in self?.updatePendingIndicator() }
