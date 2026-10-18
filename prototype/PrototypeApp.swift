@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-final class ThinkingPanel: NSPanel {
+final class ThinkingPanel: NSWindow {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
 }
@@ -13,7 +13,7 @@ final class ThinkingPanel: NSPanel {
     private var statusItem: NSStatusItem!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.accessory)
+        NSApp.setActivationPolicy(.regular)
         do { try store.start() }
         catch {
             let alert = NSAlert(); alert.messageText = "Maie could not start"; alert.informativeText = error.localizedDescription
@@ -22,26 +22,23 @@ final class ThinkingPanel: NSPanel {
         configureMenus()
 
         panel = ThinkingPanel(contentRect: NSRect(x: 0, y: 0, width: 430, height: 600),
-                              styleMask: [.borderless, .resizable], backing: .buffered, defer: false)
+                              styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         panel.title = "Maie"
         panel.setAccessibilityLabel("Maie window")
         panel.isReleasedWhenClosed = false
-        panel.isFloatingPanel = true
-        panel.level = .floating
-        panel.hidesOnDeactivate = false
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.level = .normal
+        panel.collectionBehavior = [.fullScreenPrimary]
         panel.isMovableByWindowBackground = true
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
         panel.minSize = NSSize(width: 400, height: 520)
-        panel.maxSize = NSSize(width: 580, height: 1100)
+        panel.maxSize = NSSize(width: 1200, height: 1600)
         panel.delegate = self
 
-        let view = PrototypeView(store: store, connection: connection, hide: { [weak self] in self?.hide() },
+        let view = PrototypeView(store: store, connection: connection,
                                  resize: { [weak self] expanded in self?.resize(expanded: expanded) })
-            .clipShape(RoundedRectangle(cornerRadius: 22))
-            .overlay(RoundedRectangle(cornerRadius: 22).stroke(Color.primary.opacity(0.10), lineWidth: 1))
+
         panel.contentView = NSHostingView(rootView: view)
         store.onPendingQuestionsChange = { [weak self] in self?.updatePendingIndicator() }
         updatePendingIndicator()
@@ -62,6 +59,8 @@ final class ThinkingPanel: NSPanel {
         let appItem = NSMenuItem()
         let appMenu = NSMenu()
         appMenu.addItem(item("Show Maie", #selector(show), "0"))
+        appMenu.addItem(item("Close Window", #selector(closeWindow), "w"))
+        appMenu.addItem(item("Minimize", #selector(minimizeWindow), "m"))
         appMenu.addItem(item("Discuss", #selector(focusDiscussion), "j"))
         appMenu.addItem(.separator())
         appMenu.addItem(item("Quit Maie", #selector(quit), "q"))
@@ -105,8 +104,9 @@ final class ThinkingPanel: NSPanel {
         let summary = NSMenuItem(title: pending.isEmpty ? "Waiting for Claude" : "\(pending.count) pending question set\(pending.count == 1 ? "" : "s")",
                                  action: nil, keyEquivalent: "")
         menu.addItem(summary)
-        for (index, target) in pending.enumerated() {
-            let entry = item("\(index + 1). \(target.title) · \(target.count) question\(target.count == 1 ? "" : "s")", #selector(openPendingQuestion(_:)), "")
+        for target in pending {
+            let entry = item("\(target.title)", #selector(openPendingQuestion(_:)), "")
+            entry.toolTip = "\(target.count) question\(target.count == 1 ? "" : "s") waiting"
             entry.representedObject = target
             menu.addItem(entry)
         }
@@ -129,9 +129,13 @@ final class ThinkingPanel: NSPanel {
 
     @objc private func show() {
         keepOnScreen()
+        if panel.isMiniaturized { panel.deminiaturize(nil) }
         panel.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
+
+    @objc private func closeWindow() { panel.performClose(nil) }
+    @objc private func minimizeWindow() { panel.performMiniaturize(nil) }
 
     private func hide() { panel.orderOut(nil) }
     @objc private func focusDiscussion() {

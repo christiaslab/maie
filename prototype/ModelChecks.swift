@@ -3,6 +3,12 @@ import Security
 
 @main struct ModelChecks {
     @MainActor static func main() async throws {
+        let styled = DiscussionGuidance.displayText("**Bold** and `code`\n\n[Link](https://example.invalid)")
+        precondition(String(styled.characters) == "Bold and code\n\nLink")
+        precondition(styled.runs.allSatisfy { $0.link == nil }, "Model links must remain inert")
+        precondition(styled.runs.contains { $0.inlinePresentationIntent?.contains(.stronglyEmphasized) == true })
+        let literal = "<script>alert(1)</script> $(literal)"
+        precondition(String(DiscussionGuidance.displayText(literal).characters) == literal)
         try checkQuestionSets()
         try await checkQuestionTaskRouting()
         if CommandLine.arguments.contains("--questions-only") { return }

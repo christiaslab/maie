@@ -1,6 +1,18 @@
+import Foundation
+
 // Teaching guidance adapted from Matt Pocock's wait-what and teach skills.
 // See ../THIRD-PARTY-NOTICES.md for sources and the upstream MIT notice.
 enum DiscussionGuidance {
+    // Native inline styling only: preserve line breaks and never activate model links.
+    static func displayText(_ source: String) -> AttributedString {
+        var text = (try? AttributedString(markdown: source, options: .init(
+            interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(source)
+        for run in text.runs where run.link != nil {
+            text[run.range].link = nil
+        }
+        return text
+    }
+
     static let explain = DiscussionSkills.explain
     static let teach = DiscussionSkills.teach
 

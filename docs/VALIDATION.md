@@ -78,8 +78,8 @@ claimed.
 - Full 30-minute host waits and every host/plugin combination are unverified.
 - Cloud/SSH, Windows/Linux and parent/child session
   discovery are unsupported.
-- The UI displays model replies as plain text; Markdown tables and formatting
-  can appear literally. Provider behavior and model response quality can vary.
+- Model discussion replies support native inline Markdown. Tables and block
+  formatting can still appear literally. Provider response quality can vary.
 
 Offline checks do not call OpenAI or Claude, inspect real credentials or operate
 the GUI. Live tests consume the connected account's normal usage.
@@ -93,3 +93,19 @@ checks passed again on October 18. The restricted sandbox could not create the
 temporary synthetic RSA key; the complete build passed outside that sandbox,
 without real credentials or model calls. Hidden-panel visibility, menu interaction, keyboard focus during
 concurrent typing and reduced motion still require user-operated validation.
+
+## October 18 user-operated follow-up and refinement
+
+The owner confirmed quiet arrival, correct opening, concurrent sessions with
+preserved draft, cancellation removing a pending menu entry while retaining
+history, explanation/teaching behavior, explicit proposal acceptance, Claude
+receipt and the pending dot clearing. Notice dismissal, expiry and reduced
+motion were not independently confirmed in this follow-up.
+
+The subsequent window/session refinement requires new live checks: normal
+window stacking, native close/minimize/zoom, Dock switching, session contrast
+and inline Markdown appearance. Synthetic formatting checks cover preserved
+paragraphs, emphasis, inert links and literal script-like text. No live model
+calls or real credentials are used by these checks.
+
+The complete build and offline app/helper checks passed after this refinement.

@@ -92,7 +92,6 @@ final class PrototypePresentation: ObservableObject {
 struct PrototypeView: View {
     @ObservedObject var store: SessionStore
     @ObservedObject var connection: OpenAIConnection
-    let hide: () -> Void
     let resize: (Bool) -> Void
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -208,8 +207,6 @@ struct PrototypeView: View {
                 .popover(isPresented: $presentation.showsConnection, arrowEdge: .bottom) {
                     ConnectionView(connection: connection).disabled(!store.busySessionIDs.isEmpty)
                 }
-            Button(action: hide) { Image(systemName: "minus").font(.system(size: 12)).frame(width: 28, height: 28) }
-                .buttonStyle(.plain).help("Hide Maie · pending requests keep their deadlines")
         }.padding(.leading, 20).padding(.trailing, 12).padding(.vertical, 9)
     }
 
@@ -434,7 +431,7 @@ struct PrototypeView: View {
                             Text("· earlier question")
                         }
                     }.font(.system(size: 10, weight: .medium)).foregroundStyle(message.role == "user" ? muted : accent)
-                    Text(message.text).font(.system(size: 13)).lineSpacing(4)
+                    Text(message.role == "user" ? AttributedString(message.text) : DiscussionGuidance.displayText(message.text)).font(.system(size: 13)).lineSpacing(4)
                         .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                 }.frame(maxWidth: .infinity, alignment: .leading)
                     .padding(message.role == "user" ? 12 : 0)
@@ -524,7 +521,14 @@ struct PrototypeView: View {
                 Text("Sessions").font(.system(size: 18, design: .serif))
                 ForEach(store.sessions) { session in
                     VStack(alignment: .leading, spacing: 7) {
-                        Button(sessionLabel(session)) { store.selectSession(session.id); presentation.showsSessions = false }
+                        Button { store.selectSession(session.id); presentation.showsSessions = false } label: {
+                            HStack(alignment: .top) {
+                                Text(sessionLabel(session)).frame(maxWidth: .infinity, alignment: .leading)
+                                if session.id == store.activeSessionID {
+                                    Image(systemName: "checkmark.circle.fill").foregroundStyle(accent)
+                                }
+                            }
+                        }
                             .buttonStyle(.plain).font(.system(size: 12, weight: .medium))
                         ForEach(session.requests) { request in
                             Button {
@@ -537,8 +541,14 @@ struct PrototypeView: View {
                             }.buttonStyle(.plain)
                         }
                     }
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(session.id == store.activeSessionID ? accent.opacity(0.12) : Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(session.id == store.activeSessionID ? accent.opacity(0.4) : .clear))
                 }
                 Divider()
+                Text("Cancelled and completed questions stay in history.")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
                 Button("Cancel current question") { store.cancel(); presentation.showsSessions = false }
                     .disabled(store.activeRequest?.status != .waiting)
                 Button("Delete this session…", role: .destructive) {
@@ -549,7 +559,7 @@ struct PrototypeView: View {
                 }
                 .disabled(store.activeSession == nil)
             }.padding(18)
-        }.frame(width: 310, height: 390)
+        }.frame(width: 360, height: 450)
     }
     private var payloadPreview: some View {
         VStack(alignment: .leading, spacing: 12) {
