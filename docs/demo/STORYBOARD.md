@@ -35,9 +35,9 @@ file, checksum and license are recorded locally next to the media.
 Fictional project **trailmap**. Claude asks:
 
 > Where should Trailmap store saved routes for the first release?
-> 1. SQLite file — One local database file
-> 2. Postgres service — Shared server database
-> 3. JSON files — One file per route
+> 1. SQLite file: One local database file
+> 2. Postgres service: Shared server database
+> 3. JSON files: One file per route
 
 ## Shot list
 
@@ -47,14 +47,14 @@ sit on the right. The opening and closing scenes are a mock terminal pane
 
 | Scene | On screen | Caption |
 | --- | --- | --- |
-| Intro (~3 s) | Terminal pane: the AskUserQuestion with its three options and a "waiting…" cursor. | — |
+| Intro (~3 s) | Terminal pane: the AskUserQuestion with its three options and a "waiting…" cursor. | No caption |
 | 1 · OPEN | Maie opened from the menu-bar leaf; the question, options and empty **Your answer**. | "The question waits in Maie until you open it." |
 | 2 · UNDERSTAND | "Explain the difference briefly." typed in **Ask Maie**; first-send confirmation; the explanation appears while **Your answer** stays empty. | "Ask what the options mean." / "You confirm the first request before it is sent." |
 | 3 · DECIDE | Rough intent typed in **Your answer**; **Suggest answer** (the refine skill tightens the draft); a **Proposed answer** with **Use in draft / Dismiss** while the draft below is unchanged. | "Write your intent. Suggest answer tightens it into a proposal." / "The suggestion stays separate. Your answer is unchanged." |
 | 4 · ACCEPT | **Use in draft**; the draft now holds the proposal text. | "Use in draft copies it into your answer." |
 | 5 · EDIT | " Revisit after the beta." appended to the draft. | "Edit the answer in your own words." |
 | 6 · SEND | **Send to Claude**; status shows the answer was sent. | "Only Send to Claude submits it." |
-| Outro (~6 s) | Terminal pane: the received answer typed after "›", then "exactly the edited text ✓" from the real helper output; closing frame with the leaf and the "maie" wordmark. | — |
+| Outro (~6 s) | Terminal pane: the received answer typed after "›", then "exactly the edited text ✓" from the real helper output; closing frame with the leaf and the "maie" wordmark. | No caption |
 
 Do not cut the unchanged-draft moment in step 3.
 

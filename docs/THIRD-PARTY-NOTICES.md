@@ -1,6 +1,6 @@
 # Third-party notices
 
-## Matt Pocock — Skills For Real Engineers
+## Skills For Real Engineers by Matt Pocock
 
 Maie's discussion guidance adapts ideas from the following skills by Matt Pocock:
 
@@ -13,8 +13,8 @@ inspected October 17, 2026.
 
 The Maie adaptation is scoped to conversation guidance: brief re-explanation
 and small teaching steps. The adapted sources are
-[skills/wait-what/SKILL.md](skills/wait-what/SKILL.md) and
-[skills/teach/SKILL.md](skills/teach/SKILL.md); their bodies are compiled into the
+[skills/wait-what/SKILL.md](../skills/wait-what/SKILL.md) and
+[skills/teach/SKILL.md](../skills/teach/SKILL.md); their bodies are compiled into the
 app at build time. It does not bundle the full skill framework, teaching
 workspace, learning records, or agent tooling. These notices do not select the
 license for Maie's own code or imply endorsement by the upstream author.

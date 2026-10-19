@@ -1,7 +1,7 @@
 import Foundation
 
 // Teaching guidance adapted from Matt Pocock's wait-what and teach skills.
-// See ../THIRD-PARTY-NOTICES.md for sources and the upstream MIT notice.
+// See ../docs/THIRD-PARTY-NOTICES.md for sources and the upstream MIT notice.
 enum DiscussionGuidance {
     // Native inline styling only: preserve line breaks and never activate model links.
     static func displayText(_ source: String) -> AttributedString {

@@ -50,7 +50,7 @@ struct QuestionRequest {
                       !label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                       labels.insert(label).inserted,
                       let description = option["description"] as? String else { throw ProbeError.invalidRequest }
-                return "• \(label) — \(description)"
+                return "• \(label): \(description)"
             }
             return QuestionItem(question: question, options: descriptions, multiSelect: multiSelect)
         }

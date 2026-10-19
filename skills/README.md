@@ -25,4 +25,4 @@ The wait-what and teach bodies preserve the previously evaluated explanation and
 teaching behavior. They adapt Matt Pocock's skills for Maie's small discussion
 scope, without the upstream teaching workspace, browsing tools or
 learning-record framework. Provenance is in their metadata; refine is Maie's own
-guidance. The upstream copyright and MIT notice remain in [Third-party notices](../THIRD-PARTY-NOTICES.md).
+guidance. The upstream copyright and MIT notice remain in [Third-party notices](../docs/THIRD-PARTY-NOTICES.md).

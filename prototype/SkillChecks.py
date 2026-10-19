@@ -44,12 +44,12 @@ class SkillChecks(unittest.TestCase):
 
     def test_refine_skill_is_compiled_as_short_plain_guidance(self):
         body = GUIDANCE.load_skill(HERE.parent / "skills" / "refine" / "SKILL.md", "refine")
-        trigger = "REFINE — when the human asks to refine, tighten or improve their draft answer"
+        trigger = "REFINE: when the human asks to refine, tighten or improve their draft answer"
         self.assertTrue(body.startswith(trigger))
         self.assertLessEqual(len(body), 1_600, "Refine guidance must stay as short as the other skills")
         self.assertLessEqual(len(body.splitlines()), 4)
-        # English plain text only: ASCII plus the em dash used by every skill trigger.
-        self.assertTrue(all(ord(char) < 128 or char == "—" for char in body))
+        # English plain text only: ASCII.
+        self.assertTrue(all(ord(char) < 128 for char in body))
         self.assertFalse(any(line.lstrip().startswith(("#", "-", "*", "```")) for line in body.splitlines()))
         for rule in ["exact label", "kind=proposal", "never as discussion text", "Use in draft",
                      "kind=clarification", "empty draft", "invent"]:

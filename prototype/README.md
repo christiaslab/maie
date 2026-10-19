@@ -162,7 +162,7 @@ lists, headings and tables can still appear literally. Drafts and proposals
 stay plain text. See [validation](../docs/VALIDATION.md) and [security](../SECURITY.md).
 
 Discussion guidance adapts Matt Pocock's wait-what/teach skills. Sources and the
-upstream MIT notice are in [Third-party notices](../THIRD-PARTY-NOTICES.md).
+upstream MIT notice are in [Third-party notices](../docs/THIRD-PARTY-NOTICES.md).
 The adapted SKILL.md sources and Maie's refine skill ([skills](../skills/README.md)) are included in the repo
 and compiled into the app at build time. Editing them requires a rebuild.
 Maie's own code is [MIT licensed](../LICENSE).
