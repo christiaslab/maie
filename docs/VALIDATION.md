@@ -144,14 +144,14 @@ the composer after appearing; the fix below resolved it.
 
 ## October 18 evening fixes and checks
 
-Offline regressions in `sh prototype/build.sh` now cover: Discuss growing a
-compact window only when it is smaller and Collapse undoing only that growth;
-zoom clamped to the 1200x1600 maximum; one shared session label; choosing an
-option keeping typed text aside with explicit restore; and the refine skill
-(Suggest answer with text in the draft tightens that draft and returns a
-proposal, an empty draft behaves as before). The harness reproduced the
-clipped proposal box 25 of 25 times before the `ConversationEnd` change and
-0 of 25 after it. Windows under 640 points tighten the composer, draft and
+Offline regressions in `sh prototype/build.sh` now cover: zoom clamped to the
+1200x1600 maximum; one shared session label; choosing an option keeping typed
+text aside with explicit restore; and the refine skill (Suggest answer with
+text in the draft tightens that draft and returns a proposal, an empty draft
+behaves as before). Discuss growing a compact window only when it is smaller,
+and Collapse undoing only that growth, were checked in the local UI harness,
+not in the offline build. The harness reproduced the clipped proposal box 25 of
+25 times before the `ConversationEnd` change and 0 of 25 after it. Windows under 640 points tighten the composer, draft and
 action bar. GitHub Actions runs the same offline build on every push and
 pull request; the first two runs passed.
 
