@@ -12,7 +12,7 @@ sh prototype/run.sh
 The build uses the installed Swift compiler, macOS SDK and Python 3. It compiles
 app/helper and runs offline checks with synthetic data and temporary storage.
 No third-party packages, model requests or real credentials are needed for checks.
-Output is `prototype/.build/Maie Prototype.app` and `.build/maie-hook`.
+Output is `prototype/.build/Maie Prototype.app` and `prototype/.build/maie-hook`.
 The run script builds only if the app is missing. After rebuilding, choose the
 menu bar leaf → **Quit Maie**, then reopen.
 

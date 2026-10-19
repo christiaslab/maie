@@ -27,8 +27,8 @@ conversation content and live session identifiers.
   dependencies and passed offline app/helper/process checks. Fresh-project setup
   passed synthetic preservation/conflict tests and CLI dry-run/install/repeat
   checks in temporary directories, without touching real settings.
-- The two adapted SKILL.md bodies are included in source and compiled at build
-  time. A before/after check confirmed unchanged discussion instructions. Skill
+- The two adapted SKILL.md bodies and the project's refine skill are included
+  in source and compiled at build time. A before/after check confirmed unchanged discussion instructions. Skill
   checks cover missing/invalid inputs and literal Unicode/quote/control text,
   including interpolation-like content remaining plain text. The functional
   checks compare compiled bodies with the reviewed files and actual request.
@@ -140,4 +140,21 @@ accessible labels. The complete offline build passed afterwards.
 Not covered: the bundled app itself (the harness reuses its sources), real
 pointer interaction, reduced motion, live notice dismissal timing, live Claude
 Code and live model calls. The proposal box was intermittently clipped behind
-the composer after appearing; this is recorded for follow-up.
+the composer after appearing; the fix below resolved it.
+
+## October 18 evening fixes and checks
+
+Offline regressions in `sh prototype/build.sh` now cover: Discuss growing a
+compact window only when it is smaller and Collapse undoing only that growth;
+zoom clamped to the 1200x1600 maximum; one shared session label; choosing an
+option keeping typed text aside with explicit restore; and the refine skill
+(Suggest answer with text in the draft tightens that draft and returns a
+proposal, an empty draft behaves as before). The harness reproduced the
+clipped proposal box 25 of 25 times before the `ConversationEnd` change and
+0 of 25 after it. Windows under 640 points tighten the composer, draft and
+action bar. GitHub Actions runs the same offline build on every push and
+pull request; the first two runs passed.
+
+Not tested live: the compact layout at the 400x520 minimum, the scroll fix in
+the bundled app, the refine skill with a real model, reduced motion and
+notice dismissal timing.

@@ -87,7 +87,8 @@ Maie's explanation and teaching guidance adapts Matt Pocock's
 and [teach](https://github.com/mattpocock/skills/blob/main/skills/productivity/teach/SKILL.md)
 from [Skills For Real Engineers](https://github.com/mattpocock/skills).
 The adaptation is scoped to short conversations and human-reviewed drafts.
-The app's reviewed sources are [skills/wait-what/SKILL.md](skills/wait-what/SKILL.md)
-and [skills/teach/SKILL.md](skills/teach/SKILL.md); the build compiles their bodies
+The app's reviewed sources are [skills/wait-what/SKILL.md](skills/wait-what/SKILL.md),
+[skills/teach/SKILL.md](skills/teach/SKILL.md) and the project's own
+[skills/refine/SKILL.md](skills/refine/SKILL.md); the build compiles their bodies
 into the app. See [how the skills are used](skills/README.md).
 The upstream attribution and MIT notice are in [Third-party notices](THIRD-PARTY-NOTICES.md).

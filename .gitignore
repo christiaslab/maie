@@ -6,3 +6,7 @@
 .claude/settings.local.json
 *.log
 __pycache__/
+HANDOFF.md
+SOURCE-MANIFEST.sha256
+.claude/worktrees/
+*.pyc

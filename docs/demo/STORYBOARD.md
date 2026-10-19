@@ -7,10 +7,10 @@ and only **Send to Claude** submits it.
 
 ## Status of the current recording
 
-The current clip (`prototype/.build/demo/maie-demo-synthetic.mp4`, 44.1 s,
-1920x1080, dark appearance, produced by the gitignored UI harness under
-`prototype/.build/ui-harness/`) is **synthetic** and is labeled as such on
-screen:
+The current clip (44.1 s, 1920x1080, dark appearance, produced by a local UI
+harness) is **synthetic** and is labeled as such on screen. The clip, the
+harness and the music are local-only and not published; this storyboard is
+the only demo document in the repository.
 
 - Model replies (explanation and proposal) are scripted. No model is called.
 - Claude Code is simulated: a synthetic AskUserQuestion payload is passed to
@@ -28,8 +28,7 @@ Music: "PYNCHON" by cinameng, CC0 1.0 (public domain, no attribution
 required), from opengameart.org/content/pynchon. The 32.8 s loop is played
 twice with a short crossfade at the seam, mixed low (peak about -19 dBFS) with
 a 1 s fade in and a 3 s fade out. The media and the track stay out of Git; the
-file, checksum and license are recorded in
-`prototype/.build/demo/music/SOURCE.md`.
+file, checksum and license are recorded locally next to the media.
 
 ## Scenario
 
