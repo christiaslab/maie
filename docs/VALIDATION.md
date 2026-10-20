@@ -224,3 +224,26 @@ and the complete offline build passed.
 Not yet confirmed live: the osascript path is confirmed only through the
 terminal probe, not yet from the app (quit Maie from the leaf, reopen, hide it,
 ask Claude for an AskUserQuestion and expect a banner titled Maie with sound).
+
+## October 20 window size limits
+
+A live test on macOS 26 showed that the window could be shrunk far below the
+intended 400x520 minimum and that Zoom filled the screen instead of stopping at
+the 1200x1600 maximum. The isolated UI harness traced two causes. NSHostingView
+rewrites the window's content minimum and maximum from the SwiftUI layout on
+every constraint pass, whatever its sizingOptions, so the harness read a
+minimum of 182x342 and no maximum, and `windowWillUseStandardFrame` clamped
+the zoom against an unlimited maxSize (430x780 to 3440x1440). AppKit also adds
+the unified toolbar's height to both limits although the full-size content
+view already covers the toolbar, so setting 400x520 alone produced 400x554.
+ThinkingPanel in PrototypeApp.swift now ignores writes to contentMinSize and
+contentMaxSize, sets its limits through `applySizeLimits()` after the content
+view is assigned and takes the measured toolbar excess back off; the hosting
+view's sizingOptions are empty. The harness compact scenario then reported
+minSize 400x520 with every Discuss/Collapse resize check passing, and the
+inspect scenario reported a zoom of 430x780 to 1200x1440 with maxSize
+1200x1600. The window class is not part of the model-checks target, so no
+offline check covers it. The complete offline build passed.
+
+Not yet confirmed live: dragging the window edge, since the harness cannot
+post pointer events, and the limits after entering and leaving full screen.

@@ -51,6 +51,27 @@ final class ThinkingPanel: NSWindow {
 
     }
 
+    static let minimumFrameSize = NSSize(width: 400, height: 520)
+    static let maximumFrameSize = NSSize(width: 1200, height: 1600)
+
+    /// Sets the frame limits. AppKit adds the toolbar height to minSize and
+    /// maxSize although the full-size content view already covers the toolbar,
+    /// so the measured excess is taken back off.
+    func applySizeLimits() {
+        minSize = Self.minimumFrameSize
+        maxSize = Self.maximumFrameSize
+        let toolbarExcess = minSize.height - Self.minimumFrameSize.height
+        guard toolbarExcess > 0 else { return }
+        minSize.height = Self.minimumFrameSize.height - toolbarExcess
+        maxSize.height = Self.maximumFrameSize.height - toolbarExcess
+    }
+
+    // NSHostingView rewrites the window's content min/max size from the SwiftUI
+    // layout on every constraint pass, whatever its sizingOptions, which would
+    // replace the limits above. The panel keeps the limits from applySizeLimits.
+    override var contentMinSize: NSSize { get { super.contentMinSize } set {} }
+    override var contentMaxSize: NSSize { get { super.contentMaxSize } set {} }
+
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
 }
@@ -85,8 +106,6 @@ final class ThinkingPanel: NSWindow {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
-        panel.minSize = NSSize(width: 400, height: 520)
-        panel.maxSize = NSSize(width: 1200, height: 1600)
         panel.delegate = self
 
         let view = PrototypeView(store: store, connection: connection,
@@ -94,7 +113,10 @@ final class ThinkingPanel: NSWindow {
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .ignoresSafeArea(.container, edges: .top)
 
-        panel.contentView = NSHostingView(rootView: view)
+        let hosting = NSHostingView(rootView: view)
+        hosting.sizingOptions = []
+        panel.contentView = hosting
+        panel.applySizeLimits()
         store.onPendingQuestionsChange = { [weak self] in
             self?.updatePendingIndicator()
             self?.reconcileNotifications()
