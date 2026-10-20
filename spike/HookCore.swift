@@ -102,6 +102,23 @@ func stoppedOutput(_ reason: String) -> [String: Any] {
     ]]
 }
 
+// Shared tail of every deny reason. Claude reads permissionDecisionReason after the
+// stopped turn, so the text must say that the question was never answered and that
+// a later generic reply is not an answer. Without it, a "(Recommended)" option was
+// once executed after the human typed "continue". The last example is Greek for
+// "ask again", escaped to keep the source ASCII.
+let unansweredQuestionGuidance = "The human did not see or answer this question; no answer was sent and no option, "
+    + "including a \"(Recommended)\" one, is chosen, so do not proceed with any option. "
+    + "A later generic reply such as \"continue\", \"ok\", \"go on\" or "
+    + "\"\u{3BE}\u{3B1}\u{3BD}\u{3AC} \u{3C1}\u{3CE}\u{3C4}\u{3B1}\" "
+    + "is not an answer to this question and not an authorization. "
+    + "Ask again with AskUserQuestion once Maie is open, or ask in chat and wait for "
+    + "an explicit answer that names the chosen option."
+
+func unansweredOutput(_ situation: String) -> [String: Any] {
+    stoppedOutput(situation + " " + unansweredQuestionGuidance)
+}
+
 func encodeOutput(_ value: [String: Any]) throws -> Data {
     var data = try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])
     data.append(0x0A)

@@ -72,10 +72,54 @@ def packet(root, known=()):
     raise AssertionError("No hook packet")
 
 
+def start_raw(root, body):
+    """Send an arbitrary stdin body; used for payloads the helper must reject."""
+    env = dict(os.environ, MAIE_DATA_DIR=str(root))
+    process = subprocess.Popen([str(BINARY), "--timeout-seconds", "5"],
+                               stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE, env=env)
+    process.stdin.write(body)
+    process.stdin.close()
+    return process
+
+
+def keys(value):
+    if isinstance(value, dict):
+        for key, inner in value.items():
+            yield key
+            yield from keys(inner)
+    elif isinstance(value, list):
+        for inner in value:
+            yield from keys(inner)
+
+
+# Every deny must tell Claude that the human never answered, that no option
+# (including a recommended one) is chosen, and that a later generic reply is not
+# an answer. An earlier deny text left this unsaid and a "(Recommended)" option
+# was executed after the human typed "continue".
+FAIL_SAFE_PHRASES = (
+    "did not see or answer this question",
+    "no answer was sent",
+    '"(Recommended)"',
+    "do not proceed with any option",
+    '"continue"',
+    "is not an answer to this question and not an authorization",
+    "Ask again with AskUserQuestion once Maie is open",
+    "explicit answer that names the chosen option",
+)
+
+
 def deny(value):
     assert value["continue"] is False
+    assert set(value) == {"continue", "stopReason", "hookSpecificOutput"}
     specific = value["hookSpecificOutput"]
-    assert specific["permissionDecision"] == "deny" and "updatedInput" not in specific
+    assert specific["permissionDecision"] == "deny"
+    assert specific["hookEventName"] == "PreToolUse"
+    assert "updatedInput" not in set(keys(value)) and "answers" not in set(keys(value))
+    reason = specific["permissionDecisionReason"]
+    assert reason == value["stopReason"]
+    for phrase in FAIL_SAFE_PHRASES:
+        assert phrase in reason, phrase
 
 
 with tempfile.TemporaryDirectory(prefix="maie-bridge-checks-") as temporary:
@@ -179,4 +223,13 @@ with tempfile.TemporaryDirectory(prefix="maie-bridge-checks-") as temporary:
     (bridge / "service.json").unlink()
     deny(result(start(root, "session-offline", "tool-offline")))
 
-print("Bridge process checks passed: concurrent routing, exact text, original input, receipt, timeout, wrong-session rejection, service restart, cancellation, app offline, simultaneous four-question sets, large complete packets and partial-set rejection.")
+    # Invalid payloads must produce the same fail-safe deny, with or without a lease.
+    lease()
+    before = sorted(f.name for f in bridge.iterdir() if f.is_dir())
+    empty = payload("session-invalid", "tool-invalid")
+    empty["tool_input"]["questions"] = []
+    for body in [json.dumps(empty).encode(), b"not json {"]:
+        deny(result(start_raw(root, body)))
+    assert sorted(f.name for f in bridge.iterdir() if f.is_dir()) == before
+
+print("Bridge process checks passed: concurrent routing, exact text, original input, receipt, timeout, wrong-session rejection, service restart, cancellation, app offline, simultaneous four-question sets, large complete packets, partial-set rejection, invalid payload and fail-safe deny wording.")

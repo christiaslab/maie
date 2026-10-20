@@ -10,7 +10,7 @@ import Foundation
             let payload = FileHandle.standardInput.readData(ofLength: 65_537)
             return try HookBridgeClient.wait(payload: payload, timeout: timeout)
         } catch {
-            return (stoppedOutput("Maie: unsupported or invalid request; no answer sent. One to four questions with two to four options are supported."), nil, nil)
+            return (unansweredOutput("Maie: unsupported or invalid request (one to four questions with two to four options are supported)."), nil, nil)
         }
     }
     static func main() {

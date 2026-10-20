@@ -45,7 +45,7 @@ enum HookBridgeClient {
         guard let request = try QuestionRequest.parse(payload) else { return ([:], nil, nil) }
         let lifetime = RequestLifetime(parentID: getppid(), timeout: timeout)
         guard let lease = try? LocalStorage.read(ServiceLease.self, at: HookFiles.lease), lease.recent else {
-            return (stoppedOutput("Maie is not running. Open Maie and ask Claude to issue a new question. No answer sent."), nil, nil)
+            return (unansweredOutput("Maie is not running."), nil, nil)
         }
         let id = UUID()
         try LocalStorage.directory(HookFiles.folder(id))
@@ -68,6 +68,6 @@ enum HookBridgeClient {
             }
             Thread.sleep(forTimeInterval: 0.15)
         }
-        return (stoppedOutput("Maie: request cancelled, disconnected, or expired; no answer sent. Ask for a new question when ready."), receiptURL, id)
+        return (unansweredOutput("Maie: request cancelled, disconnected, or expired."), receiptURL, id)
     }
 }
