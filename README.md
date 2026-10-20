@@ -67,10 +67,12 @@ while a question is waiting.
 - New questions appear with a small notice. If you are busy elsewhere, **Show**
   opens the question when you are ready. A hidden Maie stays hidden: the
   menu-bar leaf shows a dot while questions are pending, and its menu lists them.
-- Maie also posts one macOS notification per new question set when it is not in
-  front. The first run asks for permission (System Settings > Notifications);
-  the banner plays the default sound, which you can switch off in System
-  Settings > Notifications > Maie, and clicking it opens that question.
+- Maie also posts one macOS banner per new question set when it is not in
+  front, through osascript's `display notification` with the default sound; no
+  permission prompt is involved. The banner is listed under "Script Editor" in
+  System Settings > Notifications, where you can silence it. It stays after the
+  set is sent, cancelled or expires, and clicking it does not open Maie: use the
+  menu-bar leaf or the in-app notice instead.
 - With Maie closed, Claude Code shows the question with its own prompt in the
   chat. Maie denies a question only when it was cancelled, expired, lost its
   connection or arrived in an invalid request; then Claude must ask again.

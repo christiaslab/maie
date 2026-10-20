@@ -39,9 +39,9 @@ Another host hook can still block a returned answer.
 ## Source map
 
 - prototype/PrototypeApp.swift: app lifecycle, window, menu bar and the
-  UserNotifications adapter.
+  osascript banner adapter.
 - prototype/QuestionNotifier.swift: one macOS banner per new live question set,
-  withdrawn when the set stops being pending; testable without the system center.
+  never repeated for the same set; testable without the system center.
 - prototype/ConnectionView.swift: connection, model and effort controls.
 - prototype/PrototypeView.swift: discussion, draft and explicit controls.
 - prototype/SessionModel.swift: per-session state, context, model snapshots,
@@ -112,10 +112,12 @@ the new set. Automatically selected questions and page navigation scroll to the
 question, while discussion changes scroll to the conversation end. Arrivals do
 not order the window forward or activate the app. A menu-bar dot marks live waiting
 sets, and the menu lists each set separately. When Maie is not active and
-showing, each new live set also posts one macOS banner (default notification
-sound, which the owner can switch off in System Settings > Notifications > Maie;
-no question text) that opens the set when clicked and is withdrawn when the set
-is sent, cancelled, expired or the app quits. Opening a menu target rechecks its
+showing, each new live set also posts one macOS banner through osascript's
+`display notification` (default sound, no question text, no permission
+prompt). The banner is listed under "Script Editor" in System Settings >
+Notifications, where the owner can silence it. It is not withdrawn when the set
+is sent, cancelled or expires, and clicking it does not open Maie; the menu-bar
+leaf and the in-app notice open the set. Opening a menu target rechecks its
 session/request identity and liveness; notice dismissal leaves pending sets
 available. Sending, cancellation and expiry remove sets from this list. Motion
 respects the system reduced-motion preference. Notices and review state are

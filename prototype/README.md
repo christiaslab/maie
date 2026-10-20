@@ -95,11 +95,12 @@ hidden; a dot beside the menu-bar leaf indicates pending question sets. Its menu
 lists each live set for explicit opening. Dismissing a notice keeps that set in
 the menu; expiry or cancellation removes it. Arrivals do not activate the window,
 and reduced-motion preferences are respected. When Maie is not active and
-showing, each new live set also posts one macOS banner (permission is asked on
-first run in System Settings > Notifications) that plays the default sound,
-opens the question when clicked and is withdrawn when the set is sent,
-cancelled or expires. Switch the sound off in System Settings > Notifications >
-Maie if you prefer a silent banner.
+showing, each new live set also posts one macOS banner through osascript's
+`display notification` with the default sound; no permission prompt is
+involved. The banner is listed under "Script Editor" in System Settings >
+Notifications, where it can be silenced. It is not withdrawn when the set is
+sent, cancelled or expires, and clicking it does not open Maie; use the
+menu-bar leaf or the in-app notice instead.
 
 The first model action per Claude session per app run shows a confirmation of
 connection/data. **View everything sent to OpenAI** expands the exact text.

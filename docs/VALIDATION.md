@@ -80,6 +80,8 @@ claimed.
   discovery are unsupported.
 - Model discussion replies support native inline Markdown. Tables and block
   formatting can still appear literally. Provider response quality can vary.
+- Real code signing with an Apple Development certificate would allow the
+  UserNotifications adapter again.
 
 Offline checks do not call OpenAI or Claude, inspect real credentials or operate
 the GUI. Live tests consume the connected account's normal usage.
@@ -202,4 +204,23 @@ plays the default notification sound, which can be switched off in System
 Settings > Notifications > Maie. The complete offline build passed.
 
 Not yet confirmed live: that Claude Code shows its own prompt when Maie is
-closed, and that the banner plays a sound and opens the set when clicked.
+closed. The banner's live result is recorded in the next section.
+
+## October 20 banner delivery through osascript
+
+A live test on macOS 26.0.1 showed that UNUserNotificationCenter denies
+authorization to the ad-hoc signed bundle without showing a prompt
+(UNErrorDomain code 1, "Notifications are not allowed for this application").
+The previous adapter swallowed the error in empty completion handlers, so Maie
+stayed silent. A proper ad-hoc codesign and a launch through LaunchServices did
+not change the result, and the legacy NSUserNotification API delivered nothing.
+A terminal probe with `osascript -e 'display notification ...'` delivered a
+banner with sound. The adapter in PrototypeApp.swift now posts through
+osascript, passing title and body as script arguments; the banner is listed
+under Script Editor in System Settings > Notifications, cannot be withdrawn and
+does not open Maie when clicked. The question notifier check passed unchanged
+and the complete offline build passed.
+
+Not yet confirmed live: the osascript path is confirmed only through the
+terminal probe, not yet from the app (quit Maie from the leaf, reopen, hide it,
+ask Claude for an AskUserQuestion and expect a banner titled Maie with sound).

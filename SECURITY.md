@@ -34,6 +34,8 @@ supported version. Review changes before building or enabling its hook.
   were approved.
 - Local JSON uses a private directory and restricted files, bounded reads and
   atomic replacement. Restored pending requests are inactive.
+- The macOS banner carries only the session label and a count, passed to
+  osascript as arguments and never interpolated into script text.
 
 ## Practical limits
 

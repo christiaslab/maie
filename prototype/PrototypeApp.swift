@@ -1,29 +1,39 @@
 import AppKit
 import SwiftUI
-import UserNotifications
 
-/// UNUserNotificationCenter adapter. Created only inside the app bundle: the
-/// center requires a bundle identity and aborts in a bare executable.
+/// Banner adapter that posts through osascript's `display notification`.
+/// UNUserNotificationCenter denies authorization to this ad-hoc signed bundle
+/// without a prompt (UNErrorDomain code 1), so the prototype goes through the
+/// script bridge instead: the banner plays the default sound, is listed under
+/// Script Editor in System Settings > Notifications, cannot be withdrawn and
+/// does not open Maie when clicked.
 @MainActor final class SystemQuestionNotificationCenter: QuestionNotificationCenter {
-    private let center = UNUserNotificationCenter.current()
-
     func requestBannerAuthorization() {
-        // Banner with the default sound, no badge. The owner can silence it in
-        // System Settings > Notifications > Maie. A denied request leaves Maie silent.
-        center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
+        // osascript needs no app authorization. The banner is listed under Script
+        // Editor in System Settings > Notifications, where the owner can silence it.
     }
 
     func post(identifier: String, title: String, body: String) {
-        let content = UNMutableNotificationContent()
-        content.title = title
-        content.body = body
-        content.sound = .default
-        center.add(UNNotificationRequest(identifier: identifier, content: content, trigger: nil)) { _ in }
+        // Title and body travel as argv and are read with `on run argv`. They are
+        // never interpolated into the script text: the body carries a session
+        // label, which is untrusted data.
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = [
+            "-e", "on run argv",
+            "-e", "display notification (item 2 of argv) with title (item 1 of argv) sound name \"default\"",
+            "-e", "end run",
+            title, body
+        ]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do { try process.run() }
+        catch { NSLog("Maie: osascript banner for %@ failed to launch: %@", identifier, error.localizedDescription) }
     }
 
     func remove(identifiers: [String]) {
-        center.removePendingNotificationRequests(withIdentifiers: identifiers)
-        center.removeDeliveredNotifications(withIdentifiers: identifiers)
+        // osascript banners cannot be withdrawn; Notification Center keeps them
+        // until the owner clears them.
     }
 }
 
@@ -45,8 +55,7 @@ final class ThinkingPanel: NSWindow {
     override var canBecomeMain: Bool { true }
 }
 
-@MainActor final class PrototypeDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItemValidation, NSMenuDelegate,
-                                           UNUserNotificationCenterDelegate {
+@MainActor final class PrototypeDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItemValidation, NSMenuDelegate {
     private let connection = OpenAIConnection()
     private lazy var store = SessionStore(connection: connection)
     private let notifier = QuestionNotifier(center: SystemQuestionNotificationCenter())
@@ -62,7 +71,6 @@ final class ThinkingPanel: NSWindow {
             alert.runModal(); NSApp.terminate(nil); return
         }
         configureMenus()
-        UNUserNotificationCenter.current().delegate = self
         notifier.requestAuthorization()
 
         panel = ThinkingPanel(contentRect: NSRect(x: 0, y: 0, width: 430, height: 600),
@@ -149,34 +157,11 @@ final class ThinkingPanel: NSWindow {
     }
 
     /// One banner per new live set, none while Maie is active and showing (the
-    /// in-app notice covers that), withdrawn when the set stops being pending.
+    /// in-app notice covers that). A set that stops being pending is forgotten;
+    /// its osascript banner stays in Notification Center.
     private func reconcileNotifications() {
         let showing = NSApp.isActive && panel != nil && panel.isVisible
         notifier.reconcile(store.pendingQuestions, windowVisible: showing)
-    }
-
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
-                                            withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
-        // Foreground delivery happens only while the window is hidden; show the banner then too.
-        completionHandler([.banner, .list])
-    }
-
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
-                                            withCompletionHandler completionHandler: @escaping () -> Void) {
-        let identifier = response.notification.request.identifier
-        Task { @MainActor in
-            self.openNotifiedQuestion(identifier)
-            completionHandler()
-        }
-    }
-
-    private func openNotifiedQuestion(_ identifier: String) {
-        guard panel != nil else { return }
-        if let id = UUID(uuidString: identifier),
-           let target = store.pendingQuestions.first(where: { $0.id == id }) {
-            store.showPendingQuestion(target)
-        }
-        show()
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
