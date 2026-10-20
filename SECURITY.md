@@ -24,11 +24,14 @@ supported version. Review changes before building or enabling its hook.
   original tool input and rechecks lifetime before returning an approved answer.
   Every answer in a question set must match an original question; partial sets
   are rejected. All pages share one deadline and receipt. Cancellation, transport
-  loss and expiry do not synthesize an answer. Every deny reason states that the
-  human did not see or answer the question, that no option (including a
-  recommended one) is chosen, and that a later generic reply such as "continue"
-  is not an answer; Claude must ask again. An earlier deny text left this
-  unsaid and a stopped turn was later resumed as if the question were approved.
+  loss and expiry do not synthesize an answer. When Maie is not running, the
+  helper returns no decision and Claude Code shows the question itself; denies
+  remain for cancellation, expiry, disconnection and invalid requests. Every
+  deny reason states that the human did not see or answer the question, that no
+  option (including a recommended one) is chosen, and that a later generic reply
+  such as "continue" is not an answer; Claude must ask again. An earlier deny
+  text left this unsaid and a stopped turn was later resumed as if the question
+  were approved.
 - Local JSON uses a private directory and restricted files, bounded reads and
   atomic replacement. Restored pending requests are inactive.
 

@@ -69,7 +69,11 @@ while a question is waiting.
   menu-bar leaf shows a dot while questions are pending, and its menu lists them.
 - Maie also posts one macOS notification per new question set when it is not in
   front. The first run asks for permission (System Settings > Notifications);
-  it is a banner only, without sound, and clicking it opens that question.
+  the banner plays the default sound, which you can switch off in System
+  Settings > Notifications > Maie, and clicking it opens that question.
+- With Maie closed, Claude Code shows the question with its own prompt in the
+  chat. Maie denies a question only when it was cancelled, expired, lost its
+  connection or arrived in an invalid request; then Claude must ask again.
 - **Sessions** holds separate discussions and lets you delete local history.
 
 ChatGPT sign-in uses Maie's own registration. An optional OpenAI API key needs

@@ -72,8 +72,10 @@ To disable Maie, remove only its matching helper entry from the project's
 
 The helper waits up to 30 minutes with a continuous-clock deadline. Host timeout
 is 1,830 seconds and onFailure is block. Host interruptions can happen earlier.
-Missing app, heartbeat loss, quit/restart, cancellation and expiry return no
-approved answer. Another hook can still deny the tool call. Maie handles one to
+When Maie is not running, the helper returns no decision and Claude Code shows
+the question with its own prompt in the chat. Heartbeat loss, quit/restart,
+cancellation, expiry and invalid requests return a deny and no approved answer.
+Another hook can still deny the tool call. Maie handles one to
 four questions per call, each with two to four options.
 Multiple selections are available when the question requests them. Your answer
 also accepts custom text, including an answer outside the listed options.
@@ -94,8 +96,10 @@ lists each live set for explicit opening. Dismissing a notice keeps that set in
 the menu; expiry or cancellation removes it. Arrivals do not activate the window,
 and reduced-motion preferences are respected. When Maie is not active and
 showing, each new live set also posts one macOS banner (permission is asked on
-first run in System Settings > Notifications; no sound) that opens the question
-when clicked and is withdrawn when the set is sent, cancelled or expires.
+first run in System Settings > Notifications) that plays the default sound,
+opens the question when clicked and is withdrawn when the set is sent,
+cancelled or expires. Switch the sound off in System Settings > Notifications >
+Maie if you prefer a silent banner.
 
 The first model action per Claude session per app run shows a confirmation of
 connection/data. **View everything sent to OpenAI** expands the exact text.

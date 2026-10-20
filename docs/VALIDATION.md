@@ -187,3 +187,19 @@ UNUserNotificationCenter works in an unsigned swiftc bundle and aborts outside
 one, so the adapter lives only in the app. The authorization prompt, banner
 delivery and click-to-open are not yet confirmed live; the discussion
 guidance's plain-Greek rule is not covered by an offline check.
+
+## October 20 pass-through when Maie is closed
+
+The "Maie is not running" deny is gone. Without a recent service lease the
+helper now returns an empty JSON object, so Claude Code falls through to its
+own AskUserQuestion prompt in the chat. Denies remain for cancellation, expiry,
+disconnection (heartbeat loss, quit or restart) and unsupported or invalid
+requests, with the fail-safe wording above unchanged. `BridgeChecks.py` now
+asserts that the app-offline case returns `{}` on one stdout line with exit
+code 0, no stderr and no new bridge packet; the deny assertions cover the
+remaining cases. The banner now requests alert and sound authorization and
+plays the default notification sound, which can be switched off in System
+Settings > Notifications > Maie. The complete offline build passed.
+
+Not yet confirmed live: that Claude Code shows its own prompt when Maie is
+closed, and that the banner plays a sound and opens the set when clicked.

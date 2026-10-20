@@ -8,14 +8,16 @@ import UserNotifications
     private let center = UNUserNotificationCenter.current()
 
     func requestBannerAuthorization() {
-        // Banners only: no sound, no badge. A denied request leaves Maie silent.
-        center.requestAuthorization(options: [.alert]) { _, _ in }
+        // Banner with the default sound, no badge. The owner can silence it in
+        // System Settings > Notifications > Maie. A denied request leaves Maie silent.
+        center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
     }
 
     func post(identifier: String, title: String, body: String) {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
+        content.sound = .default
         center.add(UNNotificationRequest(identifier: identifier, content: content, trigger: nil)) { _ in }
     }
 

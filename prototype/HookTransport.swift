@@ -44,8 +44,10 @@ enum HookBridgeClient {
     static func wait(payload: Data, timeout: TimeInterval) throws -> (output: [String: Any], receipt: URL?, id: UUID?) {
         guard let request = try QuestionRequest.parse(payload) else { return ([:], nil, nil) }
         let lifetime = RequestLifetime(parentID: getppid(), timeout: timeout)
+        // No lease means Maie is not running. Return no decision so Claude Code shows its
+        // own AskUserQuestion prompt instead of stopping the turn with a deny.
         guard let lease = try? LocalStorage.read(ServiceLease.self, at: HookFiles.lease), lease.recent else {
-            return (unansweredOutput("Maie is not running."), nil, nil)
+            return ([:], nil, nil)
         }
         let id = UUID()
         try LocalStorage.directory(HookFiles.folder(id))

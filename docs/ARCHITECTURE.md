@@ -18,6 +18,9 @@ and offline checks. There are no third-party runtime packages.
 The helper owns its stdin/stdout and final decision. Session ID, request ID,
 tool-use ID, app run ID and a continuous-clock deadline bind the response.
 Heartbeat loss, cancellation, quit or expiry produces no approved answer.
+When Maie is not running (no recent service lease), the helper returns no
+decision at all, so Claude Code falls through to its own AskUserQuestion prompt.
+Denies remain for cancellation, expiry, disconnection and invalid requests.
 Every deny reason tells Claude that the human did not see or answer the
 question, that no option is chosen and that a later generic reply such as
 "continue" is not an answer, so Claude must ask again (see SECURITY.md).
@@ -109,9 +112,10 @@ the new set. Automatically selected questions and page navigation scroll to the
 question, while discussion changes scroll to the conversation end. Arrivals do
 not order the window forward or activate the app. A menu-bar dot marks live waiting
 sets, and the menu lists each set separately. When Maie is not active and
-showing, each new live set also posts one macOS banner (no sound, no question
-text) that opens the set when clicked and is withdrawn when the set is sent,
-cancelled, expired or the app quits. Opening a menu target rechecks its
+showing, each new live set also posts one macOS banner (default notification
+sound, which the owner can switch off in System Settings > Notifications > Maie;
+no question text) that opens the set when clicked and is withdrawn when the set
+is sent, cancelled, expired or the app quits. Opening a menu target rechecks its
 session/request identity and liveness; notice dismissal leaves pending sets
 available. Sending, cancellation and expiry remove sets from this list. Motion
 respects the system reduced-motion preference. Notices and review state are

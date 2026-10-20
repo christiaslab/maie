@@ -220,8 +220,12 @@ with tempfile.TemporaryDirectory(prefix="maie-bridge-checks-") as temporary:
                                      "answers": {"Question 1?": "Partial"}})
     deny(result(partial))
 
+    # Without a lease Maie is not running: the helper returns no decision (an empty
+    # JSON object, exit code 0) so Claude Code shows its own prompt, and creates no packet.
     (bridge / "service.json").unlink()
-    deny(result(start(root, "session-offline", "tool-offline")))
+    before = sorted(f.name for f in bridge.iterdir() if f.is_dir())
+    assert result(start(root, "session-offline", "tool-offline")) == {}
+    assert sorted(f.name for f in bridge.iterdir() if f.is_dir()) == before
 
     # Invalid payloads must produce the same fail-safe deny, with or without a lease.
     lease()
@@ -232,4 +236,4 @@ with tempfile.TemporaryDirectory(prefix="maie-bridge-checks-") as temporary:
         deny(result(start_raw(root, body)))
     assert sorted(f.name for f in bridge.iterdir() if f.is_dir()) == before
 
-print("Bridge process checks passed: concurrent routing, exact text, original input, receipt, timeout, wrong-session rejection, service restart, cancellation, app offline, simultaneous four-question sets, large complete packets, partial-set rejection, invalid payload and fail-safe deny wording.")
+print("Bridge process checks passed: concurrent routing, exact text, original input, receipt, timeout, wrong-session rejection, service restart, cancellation, app offline pass-through, simultaneous four-question sets, large complete packets, partial-set rejection, invalid payload and fail-safe deny wording.")
