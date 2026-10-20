@@ -67,6 +67,9 @@ while a question is waiting.
 - New questions appear with a small notice. If you are busy elsewhere, **Show**
   opens the question when you are ready. A hidden Maie stays hidden: the
   menu-bar leaf shows a dot while questions are pending, and its menu lists them.
+- Maie also posts one macOS notification per new question set when it is not in
+  front. The first run asks for permission (System Settings > Notifications);
+  it is a banner only, without sound, and clicking it opens that question.
 - **Sessions** holds separate discussions and lets you delete local history.
 
 ChatGPT sign-in uses Maie's own registration. An optional OpenAI API key needs

@@ -92,7 +92,10 @@ notice offers Show when another session or editor is in use. Hidden Maie stays
 hidden; a dot beside the menu-bar leaf indicates pending question sets. Its menu
 lists each live set for explicit opening. Dismissing a notice keeps that set in
 the menu; expiry or cancellation removes it. Arrivals do not activate the window,
-and reduced-motion preferences are respected.
+and reduced-motion preferences are respected. When Maie is not active and
+showing, each new live set also posts one macOS banner (permission is asked on
+first run in System Settings > Notifications; no sound) that opens the question
+when clicked and is withdrawn when the set is sent, cancelled or expires.
 
 The first model action per Claude session per app run shows a confirmation of
 connection/data. **View everything sent to OpenAI** expands the exact text.

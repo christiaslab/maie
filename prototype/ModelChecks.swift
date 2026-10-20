@@ -13,6 +13,7 @@ import Security
         try checkSessionLabels()
         try checkOptionDraftRetention()
         checkWindowZoom()
+        checkQuestionNotifier()
         try await checkQuestionTaskRouting()
         if CommandLine.arguments.contains("--questions-only") { return }
         try await checkRefreshLifecycle()
@@ -442,6 +443,49 @@ import Security
         catch is CancellationError { }
         print("Functional checks passed: isolated sessions/requests, exact Unicode drafts, explicit approval, hook receipt, restart without reactivation, deletion, bounded transcript filtering, completed-stream requirement.")
         print("Review regressions passed: captured deletion target, bounded history with recovery, callback cancellation before readiness/wait.")
+    }
+}
+
+@MainActor private final class RecordingNotificationCenter: QuestionNotificationCenter {
+    var authorizations = 0
+    var posted: [(identifier: String, title: String, body: String)] = []
+    var removed: [[String]] = []
+    func requestBannerAuthorization() { authorizations += 1 }
+    func post(identifier: String, title: String, body: String) { posted.append((identifier, title, body)) }
+    func remove(identifiers: [String]) { removed.append(identifiers) }
+}
+
+extension ModelChecks {
+    @MainActor static func checkQuestionNotifier() {
+        let center = RecordingNotificationCenter()
+        let notifier = QuestionNotifier(center: center)
+        notifier.requestAuthorization()
+        precondition(center.authorizations == 1)
+        let a = QuestionNotice(id: UUID(), sessionID: "session-a", title: "alpha-project", count: 1)
+        let b = QuestionNotice(id: UUID(), sessionID: "session-b", title: "beta-project", count: 3)
+        notifier.reconcile([a], windowVisible: false)
+        precondition(center.posted.count == 1 && center.removed.isEmpty, "A new live set posts exactly once")
+        precondition(center.posted[0].identifier == a.id.uuidString && center.posted[0].title == "Maie")
+        precondition(center.posted[0].body == "alpha-project: 1 question waiting")
+        notifier.reconcile([a], windowVisible: false)
+        precondition(center.posted.count == 1, "A set seen again must not be re-notified")
+        notifier.reconcile([a, b], windowVisible: false)
+        precondition(center.posted.count == 2 && center.posted[1].identifier == b.id.uuidString)
+        precondition(center.posted[1].body == "beta-project: 3 questions waiting")
+        notifier.reconcile([b], windowVisible: false)
+        precondition(center.posted.count == 2 && center.removed == [[a.id.uuidString]],
+            "A set that stops being pending is removed by its bridge id and nothing else is posted")
+        notifier.reconcile([], windowVisible: false)
+        precondition(center.removed == [[a.id.uuidString], [b.id.uuidString]] && notifier.notified.isEmpty,
+            "An empty list (quit) removes the remaining notifications")
+        let c = QuestionNotice(id: UUID(), sessionID: "session-c", title: "gamma-project", count: 2)
+        notifier.reconcile([c], windowVisible: true)
+        precondition(center.posted.count == 2 && notifier.notified == [c.id], "No banner while Maie is active and showing")
+        notifier.reconcile([c], windowVisible: false)
+        precondition(center.posted.count == 2, "A set recorded while showing never fires later")
+        notifier.reconcile([], windowVisible: false)
+        precondition(center.removed.last == [c.id.uuidString] && center.posted.count == 2)
+        print("Question notifier check passed: one banner per new live set, no repeats, removal on disappearance and quit, none while Maie is showing.")
     }
 }
 

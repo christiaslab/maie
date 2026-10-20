@@ -1,5 +1,29 @@
 import AppKit
 import SwiftUI
+import UserNotifications
+
+/// UNUserNotificationCenter adapter. Created only inside the app bundle: the
+/// center requires a bundle identity and aborts in a bare executable.
+@MainActor final class SystemQuestionNotificationCenter: QuestionNotificationCenter {
+    private let center = UNUserNotificationCenter.current()
+
+    func requestBannerAuthorization() {
+        // Banners only: no sound, no badge. A denied request leaves Maie silent.
+        center.requestAuthorization(options: [.alert]) { _, _ in }
+    }
+
+    func post(identifier: String, title: String, body: String) {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        center.add(UNNotificationRequest(identifier: identifier, content: content, trigger: nil)) { _ in }
+    }
+
+    func remove(identifiers: [String]) {
+        center.removePendingNotificationRequests(withIdentifiers: identifiers)
+        center.removeDeliveredNotifications(withIdentifiers: identifiers)
+    }
+}
 
 final class ThinkingPanel: NSWindow {
     func configureChrome() {
@@ -19,9 +43,11 @@ final class ThinkingPanel: NSWindow {
     override var canBecomeMain: Bool { true }
 }
 
-@MainActor final class PrototypeDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItemValidation, NSMenuDelegate {
+@MainActor final class PrototypeDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItemValidation, NSMenuDelegate,
+                                           UNUserNotificationCenterDelegate {
     private let connection = OpenAIConnection()
     private lazy var store = SessionStore(connection: connection)
+    private let notifier = QuestionNotifier(center: SystemQuestionNotificationCenter())
     private var panel: ThinkingPanel!
     private var statusItem: NSStatusItem!
     private var discussionGrowth: (from: CGFloat, to: CGFloat)?
@@ -34,6 +60,8 @@ final class ThinkingPanel: NSWindow {
             alert.runModal(); NSApp.terminate(nil); return
         }
         configureMenus()
+        UNUserNotificationCenter.current().delegate = self
+        notifier.requestAuthorization()
 
         panel = ThinkingPanel(contentRect: NSRect(x: 0, y: 0, width: 430, height: 600),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
@@ -57,7 +85,10 @@ final class ThinkingPanel: NSWindow {
             .ignoresSafeArea(.container, edges: .top)
 
         panel.contentView = NSHostingView(rootView: view)
-        store.onPendingQuestionsChange = { [weak self] in self?.updatePendingIndicator() }
+        store.onPendingQuestionsChange = { [weak self] in
+            self?.updatePendingIndicator()
+            self?.reconcileNotifications()
+        }
         updatePendingIndicator()
 
         if !panel.setFrameUsingName("MaiePrototypePanel") {
@@ -115,6 +146,37 @@ final class ThinkingPanel: NSWindow {
         statusItem.button?.setAccessibilityLabel("Maie · " + label)
     }
 
+    /// One banner per new live set, none while Maie is active and showing (the
+    /// in-app notice covers that), withdrawn when the set stops being pending.
+    private func reconcileNotifications() {
+        let showing = NSApp.isActive && panel != nil && panel.isVisible
+        notifier.reconcile(store.pendingQuestions, windowVisible: showing)
+    }
+
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
+                                            withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        // Foreground delivery happens only while the window is hidden; show the banner then too.
+        completionHandler([.banner, .list])
+    }
+
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
+                                            withCompletionHandler completionHandler: @escaping () -> Void) {
+        let identifier = response.notification.request.identifier
+        Task { @MainActor in
+            self.openNotifiedQuestion(identifier)
+            completionHandler()
+        }
+    }
+
+    private func openNotifiedQuestion(_ identifier: String) {
+        guard panel != nil else { return }
+        if let id = UUID(uuidString: identifier),
+           let target = store.pendingQuestions.first(where: { $0.id == id }) {
+            store.showPendingQuestion(target)
+        }
+        show()
+    }
+
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
         let pending = store.pendingQuestions
@@ -166,7 +228,10 @@ final class ThinkingPanel: NSWindow {
     }
 
     @objc private func quit() { NSApp.terminate(nil) }
-    func applicationWillTerminate(_ notification: Notification) { store.stop() }
+    func applicationWillTerminate(_ notification: Notification) {
+        store.stop()
+        notifier.reconcile([], windowVisible: false)
+    }
 
     private func resize(expanded: Bool) {
         guard panel != nil else { return }
