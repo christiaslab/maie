@@ -247,3 +247,21 @@ offline check covers it. The complete offline build passed.
 
 Not yet confirmed live: dragging the window edge, since the harness cannot
 post pointer events, and the limits after entering and leaving full screen.
+
+## October 20 live checklist
+
+Confirmed live in the bundled app after the window-limits fix: the proposal
+box appears fully visible above the composer (empty draft, Suggest answer); the
+refine skill with a real model tightens a rough draft into a proposal while
+keeping the decision and language; with Reduce motion on, the new-question
+notice appears without animation and dismisses itself after about five seconds
+when it names the shown set, and the discussion scroll jumps instead of
+animating, animating again once Reduce motion is off. The minimum window size
+is readable again and Zoom stops near the maximum, though the exact 400x520
+and 1200-point width were not measured.
+
+Not tested live: Discuss and Collapse still left the window size unchanged in
+the owner's run although the local UI harness grows 520 to 780 and undoes it
+(to be re-checked with the exact starting height); the notice staying until
+Show when another session's question arrives during editing; dragging the
+window edge and the limits after full screen.
