@@ -1,6 +1,6 @@
 # Prototype validation
 
-Updated October 18, 2026. This summary omits private paths, account information,
+Updated October 20, 2026. This summary omits private paths, account information,
 conversation content and live session identifiers.
 
 ## Completed checks
@@ -158,3 +158,32 @@ pull request; the first two runs passed.
 Not tested live: the compact layout at the 400x520 minimum, the scroll fix in
 the bundled app, the refine skill with a real model, reduced motion and
 notice dismissal timing.
+
+## October 20 fail-safe wording
+
+Incident class: Maie was not running, the helper denied the AskUserQuestion
+call and the turn stopped. The human never saw the question and later typed a
+generic "continue", which Claude read as approval of its own "(Recommended)"
+option. The three deny reasons (not running; cancelled, disconnected or
+expired; unsupported or invalid request) now share one fail-safe text: the
+human did not see or answer the question, no option including a recommended
+one is chosen, a later generic reply such as "continue", "ok" or "go on" is not
+an answer or an authorization, and Claude must ask again with AskUserQuestion
+once Maie is open or in chat with an explicit answer naming the option. The
+decision, exit code and `"continue": false` are unchanged.
+
+`BridgeChecks.py` now asserts, for every deny (timeout, wrong session, service
+restart, cancellation, partial set, app offline), the key phrases above, no
+`updatedInput` or `answers` key anywhere, `permissionDecision` equal to deny
+and `stopReason` equal to `permissionDecisionReason`. A new case sends a
+zero-question payload and a non-JSON body: both return the same deny on one
+stdout line with exit code 0 and create no bridge packet. The complete offline
+build passed.
+
+The same build adds the question notifier check: one banner per new live set,
+no repeat, removal when the set disappears or the app quits, and no banner
+while Maie is active and showing. A throwaway probe bundle confirmed that
+UNUserNotificationCenter works in an unsigned swiftc bundle and aborts outside
+one, so the adapter lives only in the app. The authorization prompt, banner
+delivery and click-to-open are not yet confirmed live; the discussion
+guidance's plain-Greek rule is not covered by an offline check.

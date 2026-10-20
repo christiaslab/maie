@@ -18,6 +18,9 @@ and offline checks. There are no third-party runtime packages.
 The helper owns its stdin/stdout and final decision. Session ID, request ID,
 tool-use ID, app run ID and a continuous-clock deadline bind the response.
 Heartbeat loss, cancellation, quit or expiry produces no approved answer.
+Every deny reason tells Claude that the human did not see or answer the
+question, that no option is chosen and that a later generic reply such as
+"continue" is not an answer, so Claude must ask again (see SECURITY.md).
 Pages in a question set share one bridge request, tool-use identity, lifetime
 and receipt. Each page has its own stable local ID, draft, composer, proposal and
 discussion. The helper validates that answer keys match every original question
@@ -32,7 +35,11 @@ Another host hook can still block a returned answer.
 
 ## Source map
 
-- prototype/PrototypeApp.swift: app lifecycle, window and menu bar.
+- prototype/PrototypeApp.swift: app lifecycle, window, menu bar and the
+  UserNotifications adapter.
+- prototype/QuestionNotifier.swift: one macOS banner per new live question set,
+  withdrawn when the set stops being pending; testable without the system center.
+- prototype/ConnectionView.swift: connection, model and effort controls.
 - prototype/PrototypeView.swift: discussion, draft and explicit controls.
 - prototype/SessionModel.swift: per-session state, context, model snapshots,
   proposal/clarification routing and final submission.
@@ -49,6 +56,8 @@ Another host hook can still block a returned answer.
 - spike/HookCore.swift: shared request validation and lifetime primitives,
   retained at its original path because the build imports it directly.
 - prototype/setup-hook.py: fresh project-local setup, previewed before --apply.
+- prototype/ModelChecks.swift, BridgeChecks.py, SetupHookChecks.py and
+  SkillChecks.py: the offline checks run by prototype/build.sh.
 
 ## Model requests
 
@@ -63,7 +72,9 @@ active revision and account before saving credentials. Sign-out invalidates this
 revision before revocation begins. Cleanup is bound to each refresh/model task,
 so an old cancelled operation cannot clear its replacement.
 
-Discussion uses concise explanations and optional small teaching steps.
+Discussion uses concise explanations and optional small teaching steps, in the
+human's language; Greek input gets plain Greek with identifiers, commands and
+option labels kept in English.
 Suggest answer uses structured proposal/clarification output. A proposal never
 changes the draft until Use in draft. A clarification stays in discussion.
 The most recent draft takes precedence over older discussion preferences.
@@ -97,7 +108,10 @@ response or another active session keeps its selection; Show explicitly opens
 the new set. Automatically selected questions and page navigation scroll to the
 question, while discussion changes scroll to the conversation end. Arrivals do
 not order the window forward or activate the app. A menu-bar dot marks live waiting
-sets, and the menu lists each set separately. Opening a menu target rechecks its
+sets, and the menu lists each set separately. When Maie is not active and
+showing, each new live set also posts one macOS banner (no sound, no question
+text) that opens the set when clicked and is withdrawn when the set is sent,
+cancelled, expired or the app quits. Opening a menu target rechecks its
 session/request identity and liveness; notice dismissal leaves pending sets
 available. Sending, cancellation and expiry remove sets from this list. Motion
 respects the system reduced-motion preference. Notices and review state are
